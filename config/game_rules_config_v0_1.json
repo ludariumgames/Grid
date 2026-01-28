@@ -1,0 +1,450 @@
+{
+  "version": "0.1",
+  "game": {
+    "players": {
+      "min_players": 2,
+      "max_players": 4,
+      "turn_direction": "clockwise",
+      "next_player_definition": "left"
+    },
+    "deck": {
+      "ranks": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6
+      ],
+      "colors": [
+        1,
+        2,
+        3,
+        4,
+        5
+      ],
+      "shapes": [
+        1,
+        2,
+        3
+      ],
+      "unique_cards": true,
+      "total_cards": 90
+    },
+    "grid": {
+      "width": 5,
+      "height": 5,
+      "protected_zone": {
+        "shape": "square",
+        "size": 3,
+        "position": "center"
+      }
+    },
+    "draft": {
+      "reveal": 3,
+      "pick_self": 1,
+      "pass_next_player": 1,
+      "discard": 1
+    },
+    "patterns": {
+      "auto_trigger": true,
+      "auto_clear_after_trigger": true,
+      "multi_trigger_resolution_order": "agent_choice"
+    },
+    "rewards": {
+      "optional_by_default": true,
+      "extra_turn_ignored_if_deck_empty": true,
+      "opponent_actions_forbid_touch_protected_zone": true,
+      "opponent_actions_forbid_move_into_or_out_of_protected_zone": true,
+      "reward_placement_failure_does_not_end_game": true
+    },
+    "joker": {
+      "enabled": true,
+      "matches_any_rank": true,
+      "matches_any_color": true
+    }
+  },
+  "enums": {
+    "pattern_shape": [
+      "square_3x3",
+      "line_len_5",
+      "line_len_4"
+    ],
+    "rank_rule": [
+      "R1_line_sequence_step1",
+      "R2_line_all_equal",
+      "R3_square_stripes",
+      "R4_square_two_axes"
+    ],
+    "color_rule": [
+      "C1_line_monochrome",
+      "C2_line_all_distinct",
+      "C3_square_flag",
+      "C4_square_latin"
+    ],
+    "reward_id": [
+      "RWD1",
+      "RWD2",
+      "RWD3",
+      "RWD4",
+      "RWD5",
+      "RWD6",
+      "RWD7",
+      "RWD8",
+      "RWD9",
+      "RWD10"
+    ],
+    "fallback_policy": [
+      "random_valid_with_logging"
+    ]
+  },
+  "patterns": [
+    {
+      "id": "A",
+      "shape": "square_3x3",
+      "size_cards": 9,
+      "rank_rule": "R3_square_stripes",
+      "color_rule": "C3_square_flag",
+      "difficulty_rank": 9,
+      "vp": 20,
+      "reward": {
+        "id": "RWD9",
+        "optional": true
+      },
+      "source_ref": {
+        "workbook": "Patterns_5colors_PO_fixed_squares.xlsx",
+        "sheet": "5 цветов",
+        "row": null,
+        "reward_text": "Take a joker and place it on your board"
+      }
+    },
+    {
+      "id": "B",
+      "shape": "square_3x3",
+      "size_cards": 9,
+      "rank_rule": "R3_square_stripes",
+      "color_rule": "C4_square_latin",
+      "difficulty_rank": 6,
+      "vp": 15,
+      "reward": {
+        "id": "RWD6",
+        "optional": true
+      },
+      "source_ref": {
+        "workbook": "Patterns_5colors_PO_fixed_squares.xlsx",
+        "sheet": "5 цветов",
+        "row": null,
+        "reward_text": "Remove a card from an opponent's board to discard"
+      }
+    },
+    {
+      "id": "C",
+      "shape": "square_3x3",
+      "size_cards": 9,
+      "rank_rule": "R4_square_two_axes",
+      "color_rule": "C3_square_flag",
+      "difficulty_rank": 8,
+      "vp": 16,
+      "reward": {
+        "id": "RWD8",
+        "optional": true
+      },
+      "source_ref": {
+        "workbook": "Patterns_5colors_PO_fixed_squares.xlsx",
+        "sheet": "5 цветов",
+        "row": null,
+        "reward_text": "Take any card from the discard pile and place it on your board"
+      }
+    },
+    {
+      "id": "D",
+      "shape": "square_3x3",
+      "size_cards": 9,
+      "rank_rule": "R4_square_two_axes",
+      "color_rule": "C4_square_latin",
+      "difficulty_rank": 3,
+      "vp": 13,
+      "reward": {
+        "id": "RWD3",
+        "optional": true
+      },
+      "source_ref": {
+        "workbook": "Patterns_5colors_PO_fixed_squares.xlsx",
+        "sheet": "5 цветов",
+        "row": null,
+        "reward_text": "Move a card (or linked cards) on your board"
+      }
+    },
+    {
+      "id": "E",
+      "shape": "line_len_5",
+      "size_cards": 5,
+      "rank_rule": "R1_line_sequence_step1",
+      "color_rule": "C1_line_monochrome",
+      "difficulty_rank": 5,
+      "vp": 8,
+      "reward": {
+        "id": "RWD5",
+        "optional": true
+      },
+      "source_ref": {
+        "workbook": "Patterns_5colors_PO_fixed_squares.xlsx",
+        "sheet": "5 цветов",
+        "row": null,
+        "reward_text": "Opponent skips their next turn"
+      }
+    },
+    {
+      "id": "F",
+      "shape": "line_len_5",
+      "size_cards": 5,
+      "rank_rule": "R1_line_sequence_step1",
+      "color_rule": "C2_line_all_distinct",
+      "difficulty_rank": 2,
+      "vp": 6,
+      "reward": {
+        "id": "RWD2",
+        "optional": true
+      },
+      "source_ref": {
+        "workbook": "Patterns_5colors_PO_fixed_squares.xlsx",
+        "sheet": "5 цветов",
+        "row": null,
+        "reward_text": "Take the top card from the discard pile and place it on your board"
+      }
+    },
+    {
+      "id": "G",
+      "shape": "line_len_5",
+      "size_cards": 5,
+      "rank_rule": "R2_line_all_equal",
+      "color_rule": "C2_line_all_distinct",
+      "difficulty_rank": 10,
+      "vp": 14,
+      "reward": {
+        "id": "RWD10",
+        "optional": true
+      },
+      "source_ref": {
+        "workbook": "Patterns_5colors_PO_fixed_squares.xlsx",
+        "sheet": "5 цветов",
+        "row": null,
+        "reward_text": "Steal a card from an opponent's board and place it on your board"
+      }
+    },
+    {
+      "id": "H",
+      "shape": "line_len_4",
+      "size_cards": 4,
+      "rank_rule": "R1_line_sequence_step1",
+      "color_rule": "C1_line_monochrome",
+      "difficulty_rank": 4,
+      "vp": 7,
+      "reward": {
+        "id": "RWD4",
+        "optional": true
+      },
+      "source_ref": {
+        "workbook": "Patterns_5colors_PO_fixed_squares.xlsx",
+        "sheet": "5 цветов",
+        "row": null,
+        "reward_text": "Take an extra turn"
+      }
+    },
+    {
+      "id": "I",
+      "shape": "line_len_4",
+      "size_cards": 4,
+      "rank_rule": "R1_line_sequence_step1",
+      "color_rule": "C2_line_all_distinct",
+      "difficulty_rank": 1,
+      "vp": 6,
+      "reward": {
+        "id": "RWD1",
+        "optional": true
+      },
+      "source_ref": {
+        "workbook": "Patterns_5colors_PO_fixed_squares.xlsx",
+        "sheet": "5 цветов",
+        "row": null,
+        "reward_text": "Remove a card from your board to discard"
+      }
+    },
+    {
+      "id": "J",
+      "shape": "line_len_4",
+      "size_cards": 4,
+      "rank_rule": "R2_line_all_equal",
+      "color_rule": "C2_line_all_distinct",
+      "difficulty_rank": 7,
+      "vp": 9,
+      "reward": {
+        "id": "RWD7",
+        "optional": true
+      },
+      "source_ref": {
+        "workbook": "Patterns_5colors_PO_fixed_squares.xlsx",
+        "sheet": "5 цветов",
+        "row": null,
+        "reward_text": "Move a card on an opponent's board"
+      }
+    }
+  ],
+  "rewards": [
+    {
+      "id": "RWD1",
+      "action_type": "remove",
+      "target_scope": "self",
+      "optional": true,
+      "constraints": {
+        "requires_free_cell_on_self_board": false,
+        "forbid_opponent_protected_zone_as_source": false,
+        "forbid_opponent_protected_zone_as_destination": false
+      },
+      "agent_choices": [
+        "choose_self_card_coord"
+      ]
+    },
+    {
+      "id": "RWD2",
+      "action_type": "take_from_discard_top",
+      "target_scope": "discard",
+      "optional": true,
+      "constraints": {
+        "requires_free_cell_on_self_board": true,
+        "forbid_opponent_protected_zone_as_source": false,
+        "forbid_opponent_protected_zone_as_destination": false
+      },
+      "agent_choices": [
+        "choose_self_empty_cell_coord"
+      ]
+    },
+    {
+      "id": "RWD3",
+      "action_type": "move",
+      "target_scope": "self",
+      "optional": true,
+      "constraints": {
+        "requires_free_cell_on_self_board": false,
+        "forbid_opponent_protected_zone_as_source": false,
+        "forbid_opponent_protected_zone_as_destination": false
+      },
+      "agent_choices": [
+        "choose_self_card_coord",
+        "choose_self_empty_cell_coord"
+      ]
+    },
+    {
+      "id": "RWD4",
+      "action_type": "extra_turn",
+      "target_scope": "self",
+      "optional": true,
+      "constraints": {
+        "requires_free_cell_on_self_board": false,
+        "forbid_opponent_protected_zone_as_source": false,
+        "forbid_opponent_protected_zone_as_destination": false
+      },
+      "agent_choices": []
+    },
+    {
+      "id": "RWD5",
+      "action_type": "skip_turn",
+      "target_scope": "next_player",
+      "optional": true,
+      "constraints": {
+        "requires_free_cell_on_self_board": false,
+        "forbid_opponent_protected_zone_as_source": false,
+        "forbid_opponent_protected_zone_as_destination": false
+      },
+      "agent_choices": []
+    },
+    {
+      "id": "RWD6",
+      "action_type": "remove",
+      "target_scope": "any_opponent",
+      "optional": true,
+      "constraints": {
+        "requires_free_cell_on_self_board": false,
+        "forbid_opponent_protected_zone_as_source": true,
+        "forbid_opponent_protected_zone_as_destination": false
+      },
+      "agent_choices": [
+        "choose_opponent_id",
+        "choose_opponent_card_coord"
+      ]
+    },
+    {
+      "id": "RWD7",
+      "action_type": "move",
+      "target_scope": "any_opponent",
+      "optional": true,
+      "constraints": {
+        "requires_free_cell_on_self_board": false,
+        "forbid_opponent_protected_zone_as_source": true,
+        "forbid_opponent_protected_zone_as_destination": true
+      },
+      "agent_choices": [
+        "choose_opponent_id",
+        "choose_opponent_card_coord",
+        "choose_opponent_empty_cell_coord"
+      ]
+    },
+    {
+      "id": "RWD8",
+      "action_type": "take_from_discard_any",
+      "target_scope": "discard",
+      "optional": true,
+      "constraints": {
+        "requires_free_cell_on_self_board": true,
+        "forbid_opponent_protected_zone_as_source": false,
+        "forbid_opponent_protected_zone_as_destination": false
+      },
+      "agent_choices": [
+        "choose_discard_card_ref",
+        "choose_self_empty_cell_coord"
+      ]
+    },
+    {
+      "id": "RWD9",
+      "action_type": "spawn_joker",
+      "target_scope": "self",
+      "optional": true,
+      "constraints": {
+        "requires_free_cell_on_self_board": true,
+        "forbid_opponent_protected_zone_as_source": false,
+        "forbid_opponent_protected_zone_as_destination": false
+      },
+      "agent_choices": [
+        "choose_self_empty_cell_coord"
+      ]
+    },
+    {
+      "id": "RWD10",
+      "action_type": "steal",
+      "target_scope": "any_opponent",
+      "optional": true,
+      "constraints": {
+        "requires_free_cell_on_self_board": true,
+        "forbid_opponent_protected_zone_as_source": true,
+        "forbid_opponent_protected_zone_as_destination": false
+      },
+      "agent_choices": [
+        "choose_opponent_id",
+        "choose_opponent_card_coord",
+        "choose_self_empty_cell_coord"
+      ]
+    }
+  ],
+  "termination": {
+    "end_if_deck_less_than_reveal_before_phase2": true,
+    "reveal_required_cards": 3,
+    "end_if_no_space_for_mandatory_hand_placement": true,
+    "end_if_no_space_for_mandatory_draft_placement": true,
+    "do_not_end_if_no_space_for_reward_placement": true,
+    "extra_turn_ignored_if_deck_empty": true,
+    "deck_empty_allows_phase1_for_next_players": true
+  },
+  "agent_contract": {
+    "fallback_policy_on_invalid_choice": "random_valid_with_logging"
+  }
+}
