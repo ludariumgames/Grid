@@ -188,6 +188,7 @@ class FallbackEvent:
 
 @dataclass(slots=True)
 class MatchAndRewardResult:
+    player_idx: int
     pattern_id: str
     gained_vp: int
     reward_id: Optional[str]

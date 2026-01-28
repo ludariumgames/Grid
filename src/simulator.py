@@ -26,14 +26,29 @@ class SimulationAggregate:
     games: int = 0
     vp_samples_by_agent: Dict[str, List[int]] = field(default_factory=dict)
 
-    # win_count_by_agent[agent_name] = сколько чистых побед (ничья не даёт побед никому)
+    # Победа только при уникальном победителе. Ничья = 0 побед всем.
     win_count_by_agent: Dict[str, int] = field(default_factory=dict)
+    unique_winner_games: int = 0
+    tie_games: int = 0
 
+    # Сколько раз срабатывал каждый паттерн (частота)
     pattern_counts: Dict[str, int] = field(default_factory=dict)
+
+    # Суммарные VP по паттернам (по всем игрокам)
+    total_vp_by_pattern: Dict[str, int] = field(default_factory=dict)
+
+    # VP победителей по паттернам (только уникальные победы)
+    winner_vp_by_pattern: Dict[str, int] = field(default_factory=dict)
+    winner_triggers_by_pattern: Dict[str, int] = field(default_factory=dict)
 
     reward_applied: Dict[str, int] = field(default_factory=dict)
     reward_refused: Dict[str, int] = field(default_factory=dict)
     reward_impossible: Dict[str, int] = field(default_factory=dict)
+
+    # Награды победителей (только уникальные победы)
+    winner_reward_applied: Dict[str, int] = field(default_factory=dict)
+    winner_reward_refused: Dict[str, int] = field(default_factory=dict)
+    winner_reward_impossible: Dict[str, int] = field(default_factory=dict)
 
     end_reasons: Dict[str, int] = field(default_factory=dict)
     turns_total: int = 0
@@ -74,7 +89,6 @@ def run_simulations(inp: SimulationInput) -> Tuple[RulesConfig, SimulationAggreg
         )
 
     rewards_by_id = build_rewards_by_id(cfg)
-
     agg = SimulationAggregate()
 
     base_rng = random.Random(inp.seed)
@@ -100,11 +114,11 @@ def run_simulations(inp: SimulationInput) -> Tuple[RulesConfig, SimulationAggreg
             else:
                 raise ValueError(
                     f"Unsupported agent '{aname}'. Currently implemented: random. "
-                    f"Next steps: greedy, disruptor."
+                    f"Next steps: center_square, center_line4, center_line5, disruptor."
                 )
 
         engine = GameEngine(cfg, agents, engine_rng)
-        final_state, stats, _events = engine.play_game(state)
+        final_state, stats, events = engine.play_game(state)
 
         agg.games += 1
         agg.turns_total += stats.turns_taken
@@ -119,12 +133,17 @@ def run_simulations(inp: SimulationInput) -> Tuple[RulesConfig, SimulationAggreg
         # Победа только при уникальном победителе. Ничья = 0 побед всем.
         winner = _unique_winner_index(final_state)
         if winner is not None:
+            agg.unique_winner_games += 1
             aname = agent_names[winner]
             agg.win_count_by_agent[aname] = agg.win_count_by_agent.get(aname, 0) + 1
+        else:
+            agg.tie_games += 1
 
+        # Частоты паттернов (триггеры)
         for pid, cnt in stats.pattern_triggers.items():
             agg.pattern_counts[pid] = agg.pattern_counts.get(pid, 0) + cnt
 
+        # Награды (все игроки)
         for rid, cnt in stats.reward_applied.items():
             agg.reward_applied[rid] = agg.reward_applied.get(rid, 0) + cnt
         for rid, cnt in stats.reward_refused.items():
@@ -132,6 +151,24 @@ def run_simulations(inp: SimulationInput) -> Tuple[RulesConfig, SimulationAggreg
         for rid, cnt in stats.reward_impossible.items():
             agg.reward_impossible[rid] = agg.reward_impossible.get(rid, 0) + cnt
 
+        # VP по паттернам (все игроки) и срез победителя
+        for ev in events:
+            agg.total_vp_by_pattern[ev.pattern_id] = agg.total_vp_by_pattern.get(ev.pattern_id, 0) + int(ev.gained_vp)
+
+            if winner is not None and ev.player_idx == winner:
+                agg.winner_vp_by_pattern[ev.pattern_id] = agg.winner_vp_by_pattern.get(ev.pattern_id, 0) + int(ev.gained_vp)
+                agg.winner_triggers_by_pattern[ev.pattern_id] = agg.winner_triggers_by_pattern.get(ev.pattern_id, 0) + 1
+
+                if ev.reward_id is not None:
+                    rid = ev.reward_id
+                    if ev.reward_impossible:
+                        agg.winner_reward_impossible[rid] = agg.winner_reward_impossible.get(rid, 0) + 1
+                    elif ev.reward_applied:
+                        agg.winner_reward_applied[rid] = agg.winner_reward_applied.get(rid, 0) + 1
+                    elif ev.reward_refused:
+                        agg.winner_reward_refused[rid] = agg.winner_reward_refused.get(rid, 0) + 1
+
+        # Fallback
         agg.fallback_total += len(stats.fallback_events)
         for fe in stats.fallback_events:
             agg.fallback_by_agent[fe.agent_name] = agg.fallback_by_agent.get(fe.agent_name, 0) + 1

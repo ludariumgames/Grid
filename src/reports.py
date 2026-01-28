@@ -27,11 +27,13 @@ def build_report(inp: SimulationInput, agg: SimulationAggregate) -> Dict[str, An
         }
 
     # Победа только при уникальном победителе. Ничья = 0 побед всем.
-    # winrate = win_count / games
     winrate: Dict[str, float] = {}
     for agent_name in agg.vp_samples_by_agent.keys():
         wins = agg.win_count_by_agent.get(agent_name, 0)
         winrate[agent_name] = float(wins) / float(agg.games)
+
+    unique_winner_rate = float(agg.unique_winner_games) / float(agg.games)
+    tie_rate = float(agg.tie_games) / float(agg.games)
 
     report: Dict[str, Any] = {
         "meta": {
@@ -44,13 +46,25 @@ def build_report(inp: SimulationInput, agg: SimulationAggregate) -> Dict[str, An
         "results": {
             "end_reasons": dict(sorted(agg.end_reasons.items(), key=lambda kv: kv[0])),
             "avg_turns": avg_turns,
-            "vp_stats": vp_stats,
+            "vp_stats": dict(sorted(vp_stats.items(), key=lambda kv: kv[0])),
             "winrate": dict(sorted(winrate.items(), key=lambda kv: kv[0])),
+            "unique_winner_games": agg.unique_winner_games,
+            "tie_games": agg.tie_games,
+            "unique_winner_rate": unique_winner_rate,
+            "tie_rate": tie_rate,
             "pattern_counts": dict(sorted(agg.pattern_counts.items(), key=lambda kv: kv[0])),
+            "total_vp_by_pattern": dict(sorted(agg.total_vp_by_pattern.items(), key=lambda kv: kv[0])),
+            "winner_vp_by_pattern": dict(sorted(agg.winner_vp_by_pattern.items(), key=lambda kv: kv[0])),
+            "winner_triggers_by_pattern": dict(sorted(agg.winner_triggers_by_pattern.items(), key=lambda kv: kv[0])),
             "rewards": {
                 "applied": dict(sorted(agg.reward_applied.items(), key=lambda kv: kv[0])),
                 "refused": dict(sorted(agg.reward_refused.items(), key=lambda kv: kv[0])),
                 "impossible": dict(sorted(agg.reward_impossible.items(), key=lambda kv: kv[0])),
+            },
+            "winner_rewards": {
+                "applied": dict(sorted(agg.winner_reward_applied.items(), key=lambda kv: kv[0])),
+                "refused": dict(sorted(agg.winner_reward_refused.items(), key=lambda kv: kv[0])),
+                "impossible": dict(sorted(agg.winner_reward_impossible.items(), key=lambda kv: kv[0])),
             },
             "fallback": {
                 "total": agg.fallback_total,
@@ -74,6 +88,18 @@ def print_report(report: Dict[str, Any]) -> None:
 
     print("End reasons:", res.get("end_reasons"))
     print("Average turns:", res.get("avg_turns"))
+    print()
+
+    print(
+        "Unique winners:",
+        res.get("unique_winner_games"),
+        "ties:",
+        res.get("tie_games"),
+        "unique_winner_rate:",
+        res.get("unique_winner_rate"),
+        "tie_rate:",
+        res.get("tie_rate"),
+    )
     print()
 
     vp_stats = res.get("vp_stats", {})
@@ -106,10 +132,23 @@ def print_report(report: Dict[str, Any]) -> None:
     print("Pattern counts:", res.get("pattern_counts"))
     print()
 
+    print("Total VP by pattern:", res.get("total_vp_by_pattern"))
+    print()
+
+    print("Winner VP by pattern:", res.get("winner_vp_by_pattern"))
+    print("Winner triggers by pattern:", res.get("winner_triggers_by_pattern"))
+    print()
+
     rewards = res.get("rewards", {})
     print("Rewards applied:", rewards.get("applied"))
     print("Rewards refused:", rewards.get("refused"))
     print("Rewards impossible:", rewards.get("impossible"))
+    print()
+
+    winner_rewards = res.get("winner_rewards", {})
+    print("Winner rewards applied:", winner_rewards.get("applied"))
+    print("Winner rewards refused:", winner_rewards.get("refused"))
+    print("Winner rewards impossible:", winner_rewards.get("impossible"))
     print()
 
     fallback = res.get("fallback", {})

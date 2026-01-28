@@ -352,6 +352,7 @@ class GameEngine:
 
             events.append(
                 MatchAndRewardResult(
+                    player_idx=pid,
                     pattern_id=match.pattern_id,
                     gained_vp=gained_vp,
                     reward_id=reward_id,

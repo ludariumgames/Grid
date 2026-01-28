@@ -4,27 +4,13 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="e7e595ea-b726-4ce8-b567-3f5f7a0c7f38" name="Changes" comment="">
-      <change afterPath="$PROJECT_DIR$/.idea/Grid.iml" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/.idea/inspectionProfiles/profiles_settings.xml" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/.idea/modules.xml" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/.idea/vcs.xml" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/README.md" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/TECHSPEC.md" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/config/game_rules_config_v0_1.json" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/src/agents/base.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/src/agents/random_agent.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/src/config_loader.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/src/game_engine.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/src/game_setup.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/src/main.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/src/models.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/src/pattern_engine.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/src/reports.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/src/reward_engine.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/src/simulator.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/tests/test_extra_turn.py" afterDir="false" />
+    <list default="true" id="e7e595ea-b726-4ce8-b567-3f5f7a0c7f38" name="Changes" comment="midway">
+      <change afterPath="$PROJECT_DIR$/src/agents/center_line4_agent.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/game_engine.py" beforeDir="false" afterPath="$PROJECT_DIR$/src/game_engine.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/models.py" beforeDir="false" afterPath="$PROJECT_DIR$/src/models.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/reports.py" beforeDir="false" afterPath="$PROJECT_DIR$/src/reports.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/simulator.py" beforeDir="false" afterPath="$PROJECT_DIR$/src/simulator.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -41,6 +27,18 @@
   <component name="Git.Settings">
     <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
   </component>
+  <component name="GitHubPullRequestSearchHistory">{
+  &quot;lastFilter&quot;: {
+    &quot;state&quot;: &quot;OPEN&quot;,
+    &quot;assignee&quot;: &quot;ludariumgames&quot;
+  }
+}</component>
+  <component name="GithubPullRequestsUISettings">{
+  &quot;selectedUrlAndAccountId&quot;: {
+    &quot;url&quot;: &quot;https://github.com/ludariumgames/Grid.git&quot;,
+    &quot;accountId&quot;: &quot;61f33231-d402-4f24-96cd-64f7744340d0&quot;
+  }
+}</component>
   <component name="ProjectColorInfo">{
   &quot;associatedIndex&quot;: 3
 }</component>
@@ -106,6 +104,19 @@
       <option name="presentableId" value="Default" />
       <updated>1769522642773</updated>
     </task>
+    <task id="LOCAL-00001" summary="midway">
+      <option name="closed" value="true" />
+      <created>1769606240210</created>
+      <option name="number" value="00001" />
+      <option name="presentableId" value="LOCAL-00001" />
+      <option name="project" value="LOCAL" />
+      <updated>1769606240210</updated>
+    </task>
+    <option name="localTasksCounter" value="2" />
     <servers />
+  </component>
+  <component name="VcsManagerConfiguration">
+    <MESSAGE value="midway" />
+    <option name="LAST_COMMIT_MESSAGE" value="midway" />
   </component>
 </project>
