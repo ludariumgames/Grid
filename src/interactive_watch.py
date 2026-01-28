@@ -30,7 +30,7 @@ def _color_letter(color: int) -> str:
 def _card_token(card: Card) -> str:
     # 3 символа, чтобы отличать 90 уникальных карт
     # rank(1..6) + color(A..E) + shape(1..3)
-    return f"{card.rank}{_color_letter(card.color)}{card.shape}"
+    return f"{card.rank}{_color_letter(card.color)}"
 
 
 def _placed_token(pc: Optional[PlacedCard]) -> str:
