@@ -1,0 +1,84 @@
+{
+  "meta": {
+    "config_path": "config/game_rules_config_v0_1.json",
+    "players": 2,
+    "games": 200,
+    "seed": 123,
+    "agents": [
+      "random"
+    ]
+  },
+  "results": {
+    "end_reasons": {
+      "END2": 200
+    },
+    "avg_turns": 26.055,
+    "vp_stats": {
+      "random": {
+        "n": 400,
+        "mean": 0.25,
+        "median": 0.0,
+        "std": 1.3900830288395256,
+        "p90": 0.0,
+        "min": 0,
+        "max": 9
+      }
+    },
+    "winrate": {
+      "random": 0.065
+    },
+    "unique_winner_games": 13,
+    "tie_games": 187,
+    "unique_winner_rate": 0.065,
+    "tie_rate": 0.935,
+    "pattern_counts": {
+      "H": 1,
+      "I": 5,
+      "J": 7
+    },
+    "total_vp_by_pattern": {
+      "H": 7,
+      "I": 30,
+      "J": 63
+    },
+    "winner_vp_by_pattern": {
+      "H": 7,
+      "I": 30,
+      "J": 63
+    },
+    "winner_triggers_by_pattern": {
+      "H": 1,
+      "I": 5,
+      "J": 7
+    },
+    "rewards": {
+      "applied": {
+        "RWD1": 4,
+        "RWD4": 1,
+        "RWD7": 3
+      },
+      "refused": {
+        "RWD1": 1,
+        "RWD7": 4
+      },
+      "impossible": {}
+    },
+    "winner_rewards": {
+      "applied": {
+        "RWD1": 4,
+        "RWD4": 1,
+        "RWD7": 3
+      },
+      "refused": {
+        "RWD1": 1,
+        "RWD7": 4
+      },
+      "impossible": {}
+    },
+    "fallback": {
+      "total": 0,
+      "by_agent": {},
+      "by_decision_type": {}
+    }
+  }
+}
