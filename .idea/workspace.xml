@@ -5,8 +5,8 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="e7e595ea-b726-4ce8-b567-3f5f7a0c7f38" name="Changes" comment="midway">
+      <change afterPath="$PROJECT_DIR$/src/interactive_watch.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/trace_one_game.py" beforeDir="false" afterPath="$PROJECT_DIR$/src/trace_one_game.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -50,6 +50,7 @@
   "keyToString": {
     "ModuleVcsDetector.initialDetectionPerformed": "true",
     "Python tests.Python tests in test_extra_turn.py.executor": "Run",
+    "Python.interactive_watch.executor": "Run",
     "Python.trace_one_game.executor": "Run",
     "RunOnceActivity.ShowReadmeOnStart": "true",
     "RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager.252": "true",
@@ -64,7 +65,29 @@
       <recent name="$PROJECT_DIR$/config" />
     </key>
   </component>
-  <component name="RunManager" selected="Python.trace_one_game">
+  <component name="RunManager" selected="Python.interactive_watch">
+    <configuration name="interactive_watch" type="PythonConfigurationType" factoryName="Python" temporary="true" nameIsGenerated="true">
+      <module name="Grid" />
+      <option name="ENV_FILES" value="" />
+      <option name="INTERPRETER_OPTIONS" value="" />
+      <option name="PARENT_ENVS" value="true" />
+      <envs>
+        <env name="PYTHONUNBUFFERED" value="1" />
+      </envs>
+      <option name="SDK_HOME" value="" />
+      <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$" />
+      <option name="IS_MODULE_SDK" value="true" />
+      <option name="ADD_CONTENT_ROOTS" value="true" />
+      <option name="ADD_SOURCE_ROOTS" value="true" />
+      <option name="SCRIPT_NAME" value="$PROJECT_DIR$/src/interactive_watch.py" />
+      <option name="PARAMETERS" value="--config config/game_rules_config_v0_1.json --players 2 --seed 123 --agents center_line4 center_line4 --show-board current" />
+      <option name="SHOW_COMMAND_LINE" value="false" />
+      <option name="EMULATE_TERMINAL" value="false" />
+      <option name="MODULE_MODE" value="false" />
+      <option name="REDIRECT_INPUT" value="false" />
+      <option name="INPUT_FILE" value="" />
+      <method v="2" />
+    </configuration>
     <configuration name="trace_one_game" type="PythonConfigurationType" factoryName="Python" temporary="true" nameIsGenerated="true">
       <module name="Grid" />
       <option name="ENV_FILES" value="" />
@@ -103,11 +126,13 @@
       <method v="2" />
     </configuration>
     <list>
+      <item itemvalue="Python.interactive_watch" />
       <item itemvalue="Python.trace_one_game" />
       <item itemvalue="Python tests.Python tests in test_extra_turn.py" />
     </list>
     <recent_temporary>
       <list>
+        <item itemvalue="Python.interactive_watch" />
         <item itemvalue="Python.trace_one_game" />
         <item itemvalue="Python tests.Python tests in test_extra_turn.py" />
       </list>
@@ -160,7 +185,15 @@
       <option name="project" value="LOCAL" />
       <updated>1769612690685</updated>
     </task>
-    <option name="localTasksCounter" value="5" />
+    <task id="LOCAL-00005" summary="midway">
+      <option name="closed" value="true" />
+      <created>1769613360226</created>
+      <option name="number" value="00005" />
+      <option name="presentableId" value="LOCAL-00005" />
+      <option name="project" value="LOCAL" />
+      <updated>1769613360226</updated>
+    </task>
+    <option name="localTasksCounter" value="6" />
     <servers />
   </component>
   <component name="VcsManagerConfiguration">
