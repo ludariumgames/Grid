@@ -4,7 +4,9 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="e7e595ea-b726-4ce8-b567-3f5f7a0c7f38" name="Changes" comment="midway" />
+    <list default="true" id="e7e595ea-b726-4ce8-b567-3f5f7a0c7f38" name="Changes" comment="midway">
+      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+    </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
@@ -49,6 +51,7 @@
     "Python tests.Python tests in test_extra_turn.py.executor": "Run",
     "Python tests.Python tests in test_line4_h_agent_pass.py.executor": "Run",
     "Python.interactive_watch.executor": "Run",
+    "Python.tournament.executor": "Run",
     "Python.trace_one_game.executor": "Run",
     "RunOnceActivity.ShowReadmeOnStart": "true",
     "RunOnceActivity.TerminalTabsStorage.copyFrom.TerminalArrangementManager.252": "true",
@@ -63,7 +66,7 @@
       <recent name="$PROJECT_DIR$/config" />
     </key>
   </component>
-  <component name="RunManager" selected="Python.interactive_watch">
+  <component name="RunManager" selected="Python.tournament">
     <configuration name="interactive_watch" type="PythonConfigurationType" factoryName="Python" temporary="true" nameIsGenerated="true">
       <module name="Grid" />
       <option name="ENV_FILES" value="" />
@@ -79,6 +82,28 @@
       <option name="ADD_SOURCE_ROOTS" value="true" />
       <option name="SCRIPT_NAME" value="$PROJECT_DIR$/src/interactive_watch.py" />
       <option name="PARAMETERS" value="--config config/game_rules_config_v0_1.json --players 2 --seed 123 --agents line4_h line4_j" />
+      <option name="SHOW_COMMAND_LINE" value="false" />
+      <option name="EMULATE_TERMINAL" value="false" />
+      <option name="MODULE_MODE" value="false" />
+      <option name="REDIRECT_INPUT" value="false" />
+      <option name="INPUT_FILE" value="" />
+      <method v="2" />
+    </configuration>
+    <configuration name="tournament" type="PythonConfigurationType" factoryName="Python" temporary="true" nameIsGenerated="true">
+      <module name="Grid" />
+      <option name="ENV_FILES" value="" />
+      <option name="INTERPRETER_OPTIONS" value="" />
+      <option name="PARENT_ENVS" value="true" />
+      <envs>
+        <env name="PYTHONUNBUFFERED" value="1" />
+      </envs>
+      <option name="SDK_HOME" value="" />
+      <option name="WORKING_DIRECTORY" value="$PROJECT_DIR$" />
+      <option name="IS_MODULE_SDK" value="true" />
+      <option name="ADD_CONTENT_ROOTS" value="true" />
+      <option name="ADD_SOURCE_ROOTS" value="true" />
+      <option name="SCRIPT_NAME" value="$PROJECT_DIR$/src/tournament.py" />
+      <option name="PARAMETERS" value="--agents line4_h line4_i line4_j --games 5000 --seed 123 --mirror" />
       <option name="SHOW_COMMAND_LINE" value="false" />
       <option name="EMULATE_TERMINAL" value="false" />
       <option name="MODULE_MODE" value="false" />
@@ -139,6 +164,7 @@
       <method v="2" />
     </configuration>
     <list>
+      <item itemvalue="Python.tournament" />
       <item itemvalue="Python.interactive_watch" />
       <item itemvalue="Python.trace_one_game" />
       <item itemvalue="Python tests.Python tests in test_line4_h_agent_pass.py" />
@@ -146,6 +172,7 @@
     </list>
     <recent_temporary>
       <list>
+        <item itemvalue="Python.tournament" />
         <item itemvalue="Python.interactive_watch" />
         <item itemvalue="Python tests.Python tests in test_line4_h_agent_pass.py" />
         <item itemvalue="Python.trace_one_game" />
@@ -240,7 +267,15 @@
       <option name="project" value="LOCAL" />
       <updated>1769690567375</updated>
     </task>
-    <option name="localTasksCounter" value="10" />
+    <task id="LOCAL-00010" summary="midway">
+      <option name="closed" value="true" />
+      <created>1769695368096</created>
+      <option name="number" value="00010" />
+      <option name="presentableId" value="LOCAL-00010" />
+      <option name="project" value="LOCAL" />
+      <updated>1769695368096</updated>
+    </task>
+    <option name="localTasksCounter" value="11" />
     <servers />
   </component>
   <component name="VcsManagerConfiguration">
