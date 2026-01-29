@@ -5,8 +5,9 @@
   </component>
   <component name="ChangeListManager">
     <list default="true" id="e7e595ea-b726-4ce8-b567-3f5f7a0c7f38" name="Changes" comment="midway">
-      <change afterPath="$PROJECT_DIR$/src/interactive_watch.py" afterDir="false" />
       <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/agents/center_line4_agent.py" beforeDir="false" afterPath="$PROJECT_DIR$/src/agents/center_line4_agent.py" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/src/interactive_watch.py" beforeDir="false" afterPath="$PROJECT_DIR$/src/interactive_watch.py" afterDir="false" />
     </list>
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
@@ -80,7 +81,7 @@
       <option name="ADD_CONTENT_ROOTS" value="true" />
       <option name="ADD_SOURCE_ROOTS" value="true" />
       <option name="SCRIPT_NAME" value="$PROJECT_DIR$/src/interactive_watch.py" />
-      <option name="PARAMETERS" value="--config config/game_rules_config_v0_1.json --players 2 --seed 123 --agents center_line4 center_line4 --show-board current" />
+      <option name="PARAMETERS" value="--players 2 --agents line4_h line4_j --seed 123" />
       <option name="SHOW_COMMAND_LINE" value="false" />
       <option name="EMULATE_TERMINAL" value="false" />
       <option name="MODULE_MODE" value="false" />
@@ -193,7 +194,23 @@
       <option name="project" value="LOCAL" />
       <updated>1769613360226</updated>
     </task>
-    <option name="localTasksCounter" value="6" />
+    <task id="LOCAL-00006" summary="midway">
+      <option name="closed" value="true" />
+      <created>1769614340739</created>
+      <option name="number" value="00006" />
+      <option name="presentableId" value="LOCAL-00006" />
+      <option name="project" value="LOCAL" />
+      <updated>1769614340739</updated>
+    </task>
+    <task id="LOCAL-00007" summary="midway">
+      <option name="closed" value="true" />
+      <created>1769614564971</created>
+      <option name="number" value="00007" />
+      <option name="presentableId" value="LOCAL-00007" />
+      <option name="project" value="LOCAL" />
+      <updated>1769614564971</updated>
+    </task>
+    <option name="localTasksCounter" value="8" />
     <servers />
   </component>
   <component name="VcsManagerConfiguration">

@@ -18,7 +18,32 @@ class _LineSlot:
     outside_coord: Coord
 
 
-class CenterLine4Agent(Agent):
+@dataclass(frozen=True, slots=True)
+class _WindowMetric:
+    pattern_id: str
+    score: float
+    filled_before: int
+    filled_after: int
+    protected_filled_after: int
+
+
+class _BaseLine4Specialist(Agent):
+    """
+    Базовый агент для паттернов H/I/J (shape=line_len_4).
+
+    Принципы:
+    1) Продолжать уже начатые линии. Если нельзя - начинать новую линию в месте,
+       где у линии будет "пространство" расти (лучше ближе к центру ряда/колонки).
+    2) Protected (центр 3x3) используем только для "ценных" карт, то есть тех,
+       что реально продвигают перспективную линию. Мусор туда не кладём.
+    3) Мусорные карты кладём по краям, предпочтительно в углы, чтобы не блокировать.
+    4) Для последовательностей (H/I) ранги 1 и 6 плохо стартуют, их чаще выгодно уводить
+       на край, если они не продолжают линию.
+    5) В драфте:
+       - pick: максимизируем свой лучший placement-score
+       - pass: минимизируем пользу следующему игроку (слева), анализируя ЕГО доску.
+    """
+
     def __init__(self, rng: random.Random, cfg: RulesConfig) -> None:
         self._rng = rng
         self._cfg = cfg
@@ -33,18 +58,43 @@ class CenterLine4Agent(Agent):
         self._ranks_domain = tuple(cfg.game.deck.ranks)
         self._colors_domain = tuple(cfg.game.deck.colors)
 
+        # Паттерны line_len_4 в конфиге
         self._line4_patterns: List[PatternSpec] = [p for p in cfg.patterns if p.shape == "line_len_4"]
         if not self._line4_patterns:
             raise ValueError("No line_len_4 patterns in config")
 
-        self._slots: List[_LineSlot] = self._build_center_slots()
+        self._patterns_by_id: Dict[str, PatternSpec] = {p.id: p for p in self._line4_patterns}
 
-        # Все line_len_4 окна для “внешнего режима”
+        # Все окна line_len_4
         self._all_line4_windows: List[_Window] = _precompute_windows(self._width, self._height).get("line_len_4", [])
+
+        # "Центральные слоты" - это те line_len_4 окна, где ровно 3 клетки попадают в protected 3x3
+        self._center_slots: List[_LineSlot] = self._build_center_slots()
+
+        # Специализация конкретного наследника
+        self._priority_pattern_ids: Tuple[str, ...] = self._build_priority()
+        if not self._priority_pattern_ids:
+            raise ValueError("Priority list must be non-empty")
+
+        for pid in self._priority_pattern_ids:
+            if pid not in self._patterns_by_id:
+                raise ValueError(f"Pattern '{pid}' not found among line_len_4 patterns in config")
+
+        self._primary_pattern_id: str = self._priority_pattern_ids[0]
+
+        # Признак: основное правило ранга последовательность или все равны (J)
+        self._primary_is_sequence = self._patterns_by_id[self._primary_pattern_id].rank_rule == "R1_line_sequence_step1"
+
+    # ---- specialization hooks ----
+
+    def _build_priority(self) -> Tuple[str, ...]:
+        raise NotImplementedError
 
     @property
     def name(self) -> str:
-        return "center_line4"
+        raise NotImplementedError
+
+    # ---- Agent API ----
 
     def choose_placement_cell(self, state: GameState, card: Card) -> Coord:
         empties = state.current_player().board.empty_cells()
@@ -67,7 +117,6 @@ class CenterLine4Agent(Agent):
     def choose_draft_pick(self, state: GameState, revealed_cards: Sequence[Card]) -> int:
         if not revealed_cards:
             return 0
-
         empties = state.current_player().board.empty_cells()
         if not empties:
             return 0
@@ -87,28 +136,35 @@ class CenterLine4Agent(Agent):
         if len(remaining_cards) == 1:
             return 0
 
-        empties = state.current_player().board.empty_cells()
-        if not empties:
+        nxt = state.player_left_of(state.current_player_idx)
+        opp = state.players[nxt]
+        opp_empties = opp.board.empty_cells()
+        if not opp_empties:
             return 0
 
-        scores = [self._best_placement_score_for_card(state, c, empties) for c in remaining_cards]
+        # Чем меньше threat, тем лучше для нас (эту карту и передаём)
+        threats = [self._opponent_threat_score(state, nxt, c, opp_empties) for c in remaining_cards]
+        if threats[0] < threats[1]:
+            return 0
+        if threats[1] < threats[0]:
+            return 1
 
-        # Передаём карту, которая по нашей оценке слабее (минимизируем помощь оппоненту),
-        # а более сильная уйдёт в общий сброс.
-        return 0 if scores[0] <= scores[1] else 1
+        # tie-break: если одинаково, передаём карту с более высоким нашим placement-score (пусть лучше уйдёт в discard)
+        my_empties = state.current_player().board.empty_cells()
+        my_scores = [self._best_placement_score_for_card(state, c, my_empties) for c in remaining_cards]
+        return 0 if my_scores[0] <= my_scores[1] else 1
 
     def choose_pattern_to_resolve(self, state: GameState, found_patterns: Sequence[PatternMatch]) -> int:
         if not found_patterns:
             return 0
 
         best_i = 0
-        best_key: Optional[Tuple[int, int]] = None  # (has_rwd4, vp)
+        best_score: Optional[int] = None
 
         for i, pm in enumerate(found_patterns):
-            has_rwd4 = 1 if (pm.reward_id == "RWD4") else 0
-            key = (has_rwd4, pm.vp)
-            if best_key is None or key > best_key:
-                best_key = key
+            s = self._pattern_pick_score(pm)
+            if best_score is None or s > best_score:
+                best_score = s
                 best_i = i
 
         return best_i
@@ -118,24 +174,37 @@ class CenterLine4Agent(Agent):
         if not valid:
             return False
 
-        if reward_id in ("RWD4", "RWD5"):
+        # Родные награды паттернов H/I/J
+        if reward_id == "RWD4":
             return True
 
-        # RWD10 применять только если есть реально нужная карта
+        if reward_id == "RWD1":
+            _best_params, benefit = self._best_rwd1_choice(state, valid)
+            return benefit > 0.5
+
+        if reward_id == "RWD7":
+            _best_params, benefit = self._best_rwd7_choice(state, valid)
+            return benefit > 0.5
+
+        # Остальные награды: базовые евристики (чтобы не было "всё всегда отклонено")
+        if reward_id == "RWD5":
+            return True
+
         if reward_id == "RWD10":
-            return self._best_rwd10_benefit(state, valid) > 0.0
+            _best_params, benefit = self._best_rwd10_choice(state, valid)
+            return benefit > 0.5
 
         if reward_id in ("RWD2", "RWD8", "RWD9"):
-            return self._best_reward_placement_benefit(state, reward_id, valid) > 0.0
+            _best_params, benefit = self._best_place_reward_choice(state, reward_id, valid)
+            return benefit > 0.5
 
-        if reward_id in ("RWD1", "RWD3"):
-            empties = len(state.current_player().board.empty_cells())
-            return empties <= 2
+        if reward_id == "RWD3":
+            _best_params, benefit = self._best_rwd3_choice(state, valid)
+            return benefit > 0.5
 
-        if reward_id in ("RWD6", "RWD7"):
-            me = state.current_player().vp
-            lead = self._leader_opponent_vp(state)
-            return lead is not None and lead > me
+        if reward_id == "RWD6":
+            _best_params, benefit = self._best_rwd6_choice(state, valid)
+            return benefit > 0.5
 
         return False
 
@@ -144,259 +213,517 @@ class CenterLine4Agent(Agent):
         if not valid:
             return {}
 
-        if reward_id in ("RWD2", "RWD8", "RWD9"):
-            return self._choose_best_reward_placement_params(state, reward_id, valid) or valid[0]
+        if reward_id == "RWD1":
+            best_params, _benefit = self._best_rwd1_choice(state, valid)
+            return best_params or valid[0]
+
+        if reward_id == "RWD7":
+            best_params, _benefit = self._best_rwd7_choice(state, valid)
+            return best_params or valid[0]
 
         if reward_id == "RWD10":
-            return self._choose_best_rwd10_params(state, valid) or valid[0]
+            best_params, _benefit = self._best_rwd10_choice(state, valid)
+            return best_params or valid[0]
 
-        return self._rng.choice(valid)
+        if reward_id in ("RWD2", "RWD8", "RWD9"):
+            best_params, _benefit = self._best_place_reward_choice(state, reward_id, valid)
+            return best_params or valid[0]
 
-    def _build_center_slots(self) -> List[_LineSlot]:
-        windows = _precompute_windows(self._width, self._height).get("line_len_4", [])
-        out: List[_LineSlot] = []
-        for w in windows:
-            if w.size != 4:
-                continue
-            coords = w.coords
-            prot = [c for c in coords if self._is_protected(c[0], c[1])]
-            if len(prot) != 3:
-                continue
-            outside = [c for c in coords if c not in prot]
-            if len(outside) != 1:
-                continue
-            out.append(_LineSlot(coords=coords, protected_coords=tuple(prot), outside_coord=outside[0]))
-        return out
+        if reward_id == "RWD3":
+            best_params, _benefit = self._best_rwd3_choice(state, valid)
+            return best_params or valid[0]
 
-    def _is_protected(self, x: int, y: int) -> bool:
-        return self._pz.is_protected(x, y, self._width, self._height)
+        if reward_id == "RWD6":
+            best_params, _benefit = self._best_rwd6_choice(state, valid)
+            return best_params or valid[0]
 
-    def _protected_has_space(self, state: GameState) -> bool:
-        b = state.current_player().board
-        for y in range(self._height):
-            for x in range(self._width):
-                if self._is_protected(x, y) and b.get(x, y) is None:
-                    return True
-        return False
+        return self._rng.choice(list(valid))
 
-    def _best_placement_score_for_card(self, state: GameState, card: Card, empties: Sequence[Coord]) -> float:
-        best = -1e18
-        for cell in empties:
-            s = self._score_placement(state, card, cell)
-            if s > best:
-                best = s
-        return best
+    # ---- scoring core ----
 
     def _score_placement(self, state: GameState, placed: PlacedCard, cell: Coord) -> float:
         board = state.current_player().board
         x, y = cell
-
         if not board.is_empty(x, y):
             return -1e18
 
-        # Немедленный VP: доминирующий фактор
-        immediate_best_vp = self._immediate_best_vp_after_placement(board, placed, cell)
-        score = float(immediate_best_vp) * 1000.0
+        # 1) Немедленный результат: какой паттерн мы реально возьмём после постановки
+        immediate = self._immediate_gain_after_placement(state, placed, cell)
+        score = float(immediate.gained_vp) * 1000.0
 
-        # Включаем режимы:
-        center_mode = self._protected_has_space(state)
+        # Если сразу закрываем primary-паттерн, явно поощряем
+        if immediate.chosen_pattern_id == self._primary_pattern_id and immediate.gained_vp > 0:
+            score += 250.0
 
-        if center_mode:
-            # Пока в protected есть места, мы давим на “центр-сейф”
-            if self._is_protected(x, y):
-                score += 40.0
-            else:
-                score -= 20.0
+        # 2) Локальный прогресс по линиям длины 4 (наш приоритет)
+        best_metrics = self._best_window_metrics_after_placement(board, placed, cell)
+        if best_metrics:
+            weight_base = 60.0
+            for m in best_metrics:
+                prio_idx = self._prio_index(m.pattern_id)
+                if prio_idx is None:
+                    continue
+                w = weight_base / float(1 + prio_idx)
+                score += m.score * w
 
-            # Продвижение по слотам 3 protected + 1 outside
-            score += self._center_slot_progress_score(board, placed, cell, immediate_best_vp)
+        # 3) Ценность protected-зоны: защищаем только то, что реально участвует в перспективной линии
+        is_prot = self._is_protected(x, y)
+        valuable = self._is_valuable_placement(board, placed, cell, best_metrics, immediate.gained_vp)
 
-        else:
-            # Центр заполнен: строим линии снаружи. Тут важна двусторонняя расширяемость
-            # и старт ближе к центру ряда/колонки.
-            score += self._outside_line_build_score(board, placed, cell)
+        if is_prot:
+            score += 35.0 if valuable else -80.0
 
-        return score
+        # 4) Мусорные карты по краям
+        if not valuable:
+            score += self._edge_corner_bonus(x, y) * 6.0
 
-    def _center_slot_progress_score(self, board, placed: PlacedCard, cell: Coord, immediate_best_vp: int) -> float:
-        score = 0.0
-        for slot in self._slots:
-            if cell not in slot.coords:
-                continue
-
-            protected_filled_before = self._count_slot_protected_filled(board, slot, None, None)
-            protected_filled_after = self._count_slot_protected_filled(board, slot, cell, placed)
-
-            if cell in slot.protected_coords:
-                score += float(protected_filled_after - protected_filled_before) * 12.0
-                score += float(protected_filled_after) * 3.0
-
-            if cell == slot.outside_coord:
-                # outside клетку в центр-режиме стараемся ставить только на “добивку”
-                if immediate_best_vp == 0:
+        # 5) Для последовательностей (H/I): ранги 1 и 6 хуже для старта
+        if self._primary_is_sequence and isinstance(placed, Card):
+            if placed.rank in (1, 6) and immediate.gained_vp == 0:
+                if not valuable:
+                    score += self._edge_corner_bonus(x, y) * 12.0
+                if is_prot:
                     score -= 60.0
-                if protected_filled_before < 3:
-                    score -= 25.0
 
-            # Потенциал совместимости по правилам line_len_4 (с пустыми как Joker)
-            compat_vp = self._compatibility_vp_for_coords(board, slot.coords, cell, placed)
-            score += compat_vp * (0.5 + float(protected_filled_after) / 3.0)
+            if placed.rank in (3, 4) and immediate.gained_vp == 0 and valuable:
+                score += self._center_proximity_bonus(x, y) * 3.0
 
-        return score
-
-    def _outside_line_build_score(self, board, placed: PlacedCard, cell: Coord) -> float:
-        x, y = cell
-        score = 0.0
-
-        # Бонус за близость к центру доски (приближение к “центру ряда/колонки” в среднем)
-        dist_center = abs(x - self._center_x) + abs(y - self._center_y)
-        score += float((self._width + self._height) // 2 - dist_center) * 1.5
-
-        # Совместимость с line_len_4 паттернами во всех окнах, которые содержат cell
-        compat_sum = 0.0
-        for w in self._all_line4_windows:
-            if cell not in w.coords:
-                continue
-            compat_sum += self._compatibility_vp_for_coords(board, w.coords, cell, placed)
-        score += compat_sum * 0.8
-
-        # Двусторонняя расширяемость: хотим иметь возможность наращивать линию в обе стороны
-        horiz = self._extendability_score(board, placed, cell, dx=1, dy=0) + self._row_center_bonus(x)
-        vert = self._extendability_score(board, placed, cell, dx=0, dy=1) + self._col_center_bonus(y)
-        score += max(horiz, vert) * 6.0
+        # 6) Слабый бонус: начинать ближе к центру ряда/колонки
+        score += self._row_col_center_start_bonus(board, x, y) * 1.5
 
         return score
 
-    def _row_center_bonus(self, x: int) -> float:
-        # “начинать ближе к центру ряда”
-        return float((self._width // 2) - abs(x - self._center_x)) * 2.0
+    # ---- immediate gain prediction ----
 
-    def _col_center_bonus(self, y: int) -> float:
-        # “начинать ближе к центру колонки”
-        return float((self._height // 2) - abs(y - self._center_y)) * 2.0
+    @dataclass(frozen=True, slots=True)
+    class _ImmediateGain:
+        gained_vp: int
+        chosen_pattern_id: Optional[str]
+        chosen_reward_id: Optional[str]
 
-    def _extendability_score(self, board, placed: PlacedCard, cell: Coord, dx: int, dy: int) -> float:
-        """
-        Считает, насколько хорошо эта постановка поддерживает рост линии в обе стороны.
-        Идея: чем больше непрерывная группа занятых клеток и чем больше “открытых концов”,
-        тем лучше.
-        """
+    def _immediate_gain_after_placement(self, state: GameState, placed: PlacedCard, cell: Coord) -> _ImmediateGain:
+        board = state.current_player().board
         x, y = cell
-        board.set(x, y, placed)
-        try:
-            run_len = 1
-            open_ends = 0
-
-            # Вперёд
-            cx, cy = x + dx, y + dy
-            while board.in_bounds(cx, cy) and board.get(cx, cy) is not None:
-                run_len += 1
-                cx, cy = cx + dx, cy + dy
-            if board.in_bounds(cx, cy) and board.get(cx, cy) is None:
-                open_ends += 1
-
-            # Назад
-            cx, cy = x - dx, y - dy
-            while board.in_bounds(cx, cy) and board.get(cx, cy) is not None:
-                run_len += 1
-                cx, cy = cx - dx, cy - dy
-            if board.in_bounds(cx, cy) and board.get(cx, cy) is None:
-                open_ends += 1
-
-            return float(run_len * run_len) + float(open_ends) * 2.5
-        finally:
-            board.set(x, y, None)
-
-    def _compatibility_vp_for_coords(self, board, coords: Tuple[Coord, ...], placed_cell: Coord, placed_card: PlacedCard) -> float:
-        """
-        Берём окно coords длины 4, подставляем placed_card в placed_cell,
-        все пустые клетки трактуем как Joker (потенциал), и суммируем VP всех
-        line_len_4 паттернов, которые остаются совместимыми.
-        """
-        placed_cards: List[PlacedCard] = []
-        for c in coords:
-            if c == placed_cell:
-                placed_cards.append(placed_card)
-                continue
-            v = board.get(c[0], c[1])
-            placed_cards.append(v if v is not None else Joker())
-
-        w = _Window(coords=coords, shape="line_len_4", size=4)
-
-        compat_vp = 0.0
-        for pat in self._line4_patterns:
-            if _match_rank_rule(placed_cards, w, pat.rank_rule, self._ranks_domain) and _match_color_rule(
-                placed_cards, w, pat.color_rule, self._colors_domain
-            ):
-                compat_vp += float(pat.vp)
-        return compat_vp
-
-    def _immediate_best_vp_after_placement(self, board, placed: PlacedCard, cell: Coord) -> int:
-        x, y = cell
-        if not board.is_empty(x, y):
-            return 0
         board.set(x, y, placed)
         try:
             pats = find_patterns_on_board(board, self._cfg)
             if not pats:
-                return 0
-            return max(pm.vp for pm in pats)
+                return self._ImmediateGain(0, None, None)
+
+            best = max(pats, key=self._pattern_pick_score)
+            return self._ImmediateGain(int(best.vp), str(best.pattern_id), getattr(best, "reward_id", None))
         finally:
             board.set(x, y, None)
 
-    def _count_slot_protected_filled(self, board, slot: _LineSlot, placed_cell: Optional[Coord], placed_card: Optional[PlacedCard]) -> int:
-        cnt = 0
-        for (x, y) in slot.protected_coords:
-            if placed_cell is not None and (x, y) == placed_cell:
-                cnt += 1
-                continue
-            if board.get(x, y) is not None:
-                cnt += 1
-        return cnt
+    def _pattern_pick_score(self, pm: PatternMatch) -> int:
+        prio = self._prio_index(pm.pattern_id)
+        prio_score = 0 if prio is None else (100 - prio * 10)
 
-    def _leader_opponent_vp(self, state: GameState) -> Optional[int]:
-        me_idx = state.current_player_idx
-        best: Optional[int] = None
-        for i, p in enumerate(state.players):
-            if i == me_idx:
-                continue
-            if best is None or p.vp > best:
-                best = p.vp
-        return best
+        reward_bonus = 0
+        if pm.reward_id == "RWD4":
+            reward_bonus = 5
+        elif pm.reward_id in ("RWD10", "RWD7", "RWD6"):
+            reward_bonus = 3
+        elif pm.reward_id in ("RWD2", "RWD8", "RWD9", "RWD1", "RWD3"):
+            reward_bonus = 2
 
-    def _best_reward_placement_benefit(self, state: GameState, reward_id: str, valid_params: Sequence[Dict[str, Any]]) -> float:
-        best = -1e18
-        for params in valid_params:
-            placed = self._placed_card_for_reward_preview(state, reward_id, params)
-            if placed is None:
-                continue
-            dst = params.get("self_empty_coord")
-            if not isinstance(dst, tuple) or len(dst) != 2:
-                continue
-            s = self._score_placement(state, placed, (int(dst[0]), int(dst[1])))
-            if s > best:
-                best = s
-        if best <= -1e17:
+        return prio_score * 1000 + int(pm.vp) * 10 + reward_bonus
+
+    def _prio_index(self, pattern_id: str) -> Optional[int]:
+        try:
+            return self._priority_pattern_ids.index(pattern_id)
+        except ValueError:
+            return None
+
+    # ---- window metrics ----
+
+    def _best_window_metrics_after_placement(self, board, placed: PlacedCard, cell: Coord) -> List[_WindowMetric]:
+        out: List[_WindowMetric] = []
+
+        x, y = cell
+        board.set(x, y, placed)
+        try:
+            for pid in self._priority_pattern_ids:
+                pat = self._patterns_by_id.get(pid)
+                if pat is None:
+                    continue
+
+                best_m: Optional[_WindowMetric] = None
+                for w in self._all_line4_windows:
+                    if cell not in w.coords:
+                        continue
+                    m = self._window_metric_after_placement(board, w, pat)
+                    if m is None:
+                        continue
+                    if best_m is None or m.score > best_m.score:
+                        best_m = m
+
+                if best_m is not None:
+                    out.append(best_m)
+        finally:
+            board.set(x, y, None)
+
+        return out
+
+    def _window_metric_after_placement(self, board, w: _Window, pat: PatternSpec) -> Optional[_WindowMetric]:
+        """
+        board уже содержит "новую" карту в рассматриваемой клетке (которая находится в w.coords).
+        Пустые клетки считаем как Joker (потенциал).
+        """
+        placed_cards: List[PlacedCard] = []
+        filled_after = 0
+        prot_filled_after = 0
+
+        for (cx, cy) in w.coords:
+            v = board.get(cx, cy)
+            if v is None:
+                placed_cards.append(Joker())
+            else:
+                placed_cards.append(v)
+                filled_after += 1
+                if self._is_protected(cx, cy):
+                    prot_filled_after += 1
+
+        if not _match_rank_rule(placed_cards, w, pat.rank_rule, self._ranks_domain):
+            return None
+        if not _match_color_rule(placed_cards, w, pat.color_rule, self._colors_domain):
+            return None
+
+        filled_before = max(0, filled_after - 1)
+
+        # Метрика прогресса:
+        # - продолжение важнее старта
+        # - completion ценим отдельно
+        completion_bonus = 60.0 if filled_after == 4 else 0.0
+        score = float(filled_before * 14 + filled_after * 7) + float(prot_filled_after) * 3.0 + completion_bonus
+
+        return _WindowMetric(
+            pattern_id=pat.id,
+            score=score,
+            filled_before=filled_before,
+            filled_after=filled_after,
+            protected_filled_after=prot_filled_after,
+        )
+
+    def _window_potential_score(self, board, w: _Window, pat: PatternSpec) -> float:
+        """
+        Потенциал окна без допущений "мы только что поставили карту".
+        """
+        placed_cards: List[PlacedCard] = []
+        filled = 0
+        prot_filled = 0
+
+        for (cx, cy) in w.coords:
+            v = board.get(cx, cy)
+            if v is None:
+                placed_cards.append(Joker())
+            else:
+                placed_cards.append(v)
+                filled += 1
+                if self._is_protected(cx, cy):
+                    prot_filled += 1
+
+        if not _match_rank_rule(placed_cards, w, pat.rank_rule, self._ranks_domain):
             return 0.0
-        return best
+        if not _match_color_rule(placed_cards, w, pat.color_rule, self._colors_domain):
+            return 0.0
 
-    def _choose_best_reward_placement_params(self, state: GameState, reward_id: str, valid_params: Sequence[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
+        completion_bonus = 60.0 if filled == 4 else 0.0
+        return float(filled * 18) + float(prot_filled) * 6.0 + completion_bonus
+
+    def _is_valuable_placement(
+        self,
+        board,
+        placed: PlacedCard,
+        cell: Coord,
+        metrics: List[_WindowMetric],
+        immediate_vp: int,
+    ) -> bool:
+        if immediate_vp > 0:
+            return True
+
+        for m in metrics:
+            if m.filled_after >= 2 and m.score >= 20.0:
+                return True
+            if m.filled_before >= 1 and m.score >= 16.0:
+                return True
+
+        return False
+
+    # ---- opponent pass evaluation ----
+
+    def _opponent_threat_score(self, state: GameState, opp_idx: int, card: Card, opp_empties: Sequence[Coord]) -> float:
+        opp_board = state.players[opp_idx].board
+
+        best_immediate_vp = 0
+        best_potential = -1e18
+
+        base_potential = self._board_line4_potential(opp_board)
+
+        for cell in opp_empties:
+            x, y = cell
+            opp_board.set(x, y, card)
+            try:
+                pats = find_patterns_on_board(opp_board, self._cfg)
+                if pats:
+                    best_immediate_vp = max(best_immediate_vp, max(pm.vp for pm in pats))
+                pot = self._board_line4_potential(opp_board)
+                if pot > best_potential:
+                    best_potential = pot
+            finally:
+                opp_board.set(x, y, None)
+
+        pot_delta = 0.0 if best_potential <= -1e17 else (best_potential - base_potential)
+        return float(best_immediate_vp) * 1000.0 + pot_delta * 10.0
+
+    # ---- board potentials (for rewards) ----
+
+    def _board_line4_potential(self, board) -> float:
+        total = 0.0
+        for w in self._all_line4_windows:
+            for pid in self._priority_pattern_ids:
+                pat = self._patterns_by_id.get(pid)
+                if pat is None:
+                    continue
+                total += self._window_potential_score(board, w, pat)
+        return total
+
+    def _protected_blockers(self, board) -> int:
+        blockers = 0
+        for y in range(self._height):
+            for x in range(self._width):
+                if not self._is_protected(x, y):
+                    continue
+                if board.get(x, y) is None:
+                    continue
+
+                ok = False
+                for w in self._all_line4_windows:
+                    if (x, y) not in w.coords:
+                        continue
+                    for pid in self._priority_pattern_ids:
+                        pat = self._patterns_by_id.get(pid)
+                        if pat is None:
+                            continue
+                        if self._window_potential_score(board, w, pat) > 0.0:
+                            ok = True
+                            break
+                    if ok:
+                        break
+
+                if not ok:
+                    blockers += 1
+
+        return blockers
+
+    # ---- reward choices ----
+
+    def _best_rwd1_choice(self, state: GameState, valid_params: Sequence[Dict[str, Any]]) -> Tuple[Optional[Dict[str, Any]], float]:
+        me = state.current_player()
+        b = me.board
+
+        base_pot = self._board_line4_potential(b)
+        base_blockers = self._protected_blockers(b)
+
         best_params: Optional[Dict[str, Any]] = None
-        best_score: Optional[float] = None
+        best_benefit = -1e18
 
         for params in valid_params:
-            placed = self._placed_card_for_reward_preview(state, reward_id, params)
-            if placed is None:
+            src = params.get("self_card_coord")
+            if not isinstance(src, tuple) or len(src) != 2:
                 continue
+            sx, sy = int(src[0]), int(src[1])
+            removed = b.get(sx, sy)
+            if removed is None:
+                continue
+
+            b.set(sx, sy, None)
+            try:
+                pot = self._board_line4_potential(b)
+                blockers = self._protected_blockers(b)
+                benefit = (pot - base_pot) + float(base_blockers - blockers) * 25.0
+                if benefit > best_benefit:
+                    best_benefit = benefit
+                    best_params = params
+            finally:
+                b.set(sx, sy, removed)
+
+        if best_benefit <= -1e17:
+            return None, 0.0
+        return best_params, float(best_benefit)
+
+    def _best_rwd7_choice(self, state: GameState, valid_params: Sequence[Dict[str, Any]]) -> Tuple[Optional[Dict[str, Any]], float]:
+        best_params: Optional[Dict[str, Any]] = None
+        best_benefit = -1e18
+
+        for params in valid_params:
+            opp_idx = params.get("opponent_idx")
+            src = params.get("opponent_card_coord")
+            dst = params.get("opponent_empty_coord")
+            if not isinstance(opp_idx, int):
+                continue
+            if not (isinstance(src, tuple) and len(src) == 2):
+                continue
+            if not (isinstance(dst, tuple) and len(dst) == 2):
+                continue
+
+            opp = state.players[opp_idx]
+            ob = opp.board
+
+            sx, sy = int(src[0]), int(src[1])
+            dx, dy = int(dst[0]), int(dst[1])
+
+            moving = ob.get(sx, sy)
+            if moving is None:
+                continue
+
+            base_pot = self._board_line4_potential(ob)
+
+            ob.set(sx, sy, None)
+            ob.set(dx, dy, moving)
+            try:
+                pot = self._board_line4_potential(ob)
+                benefit = base_pot - pot
+                if benefit > best_benefit:
+                    best_benefit = benefit
+                    best_params = params
+            finally:
+                ob.set(dx, dy, None)
+                ob.set(sx, sy, moving)
+
+        if best_benefit <= -1e17:
+            return None, 0.0
+        return best_params, float(best_benefit)
+
+    def _best_rwd10_choice(self, state: GameState, valid_params: Sequence[Dict[str, Any]]) -> Tuple[Optional[Dict[str, Any]], float]:
+        me = state.current_player()
+        if not me.board.empty_cells():
+            return None, 0.0
+
+        best_params: Optional[Dict[str, Any]] = None
+        best_score = -1e18
+
+        for params in valid_params:
+            opp_idx = params.get("opponent_idx")
+            src = params.get("opponent_card_coord")
             dst = params.get("self_empty_coord")
+            if not isinstance(opp_idx, int):
+                continue
+            if not isinstance(src, tuple) or len(src) != 2:
+                continue
             if not isinstance(dst, tuple) or len(dst) != 2:
                 continue
-            s = self._score_placement(state, placed, (int(dst[0]), int(dst[1])))
-            if best_score is None or s > best_score:
+
+            ox, oy = int(src[0]), int(src[1])
+            stolen = state.players[opp_idx].board.get(ox, oy)
+            if stolen is None:
+                continue
+
+            cell = (int(dst[0]), int(dst[1]))
+            s = self._score_placement(state, stolen, cell)
+            if s > best_score:
                 best_score = s
                 best_params = params
 
-        return best_params
+        if best_score <= -1e17:
+            return None, 0.0
+        return best_params, float(best_score)
+
+    def _best_place_reward_choice(self, state: GameState, reward_id: str, valid_params: Sequence[Dict[str, Any]]) -> Tuple[Optional[Dict[str, Any]], float]:
+        best_params: Optional[Dict[str, Any]] = None
+        best_score = -1e18
+
+        for params in valid_params:
+            placed = self._placed_card_for_reward_preview(state, reward_id, params)
+            if placed is None:
+                continue
+            dst = params.get("self_empty_coord")
+            if not isinstance(dst, tuple) or len(dst) != 2:
+                continue
+            cell = (int(dst[0]), int(dst[1]))
+            s = self._score_placement(state, placed, cell)
+            if s > best_score:
+                best_score = s
+                best_params = params
+
+        if best_score <= -1e17:
+            return None, 0.0
+        return best_params, float(best_score)
+
+    def _best_rwd3_choice(self, state: GameState, valid_params: Sequence[Dict[str, Any]]) -> Tuple[Optional[Dict[str, Any]], float]:
+        me = state.current_player()
+        b = me.board
+
+        base_pot = self._board_line4_potential(b)
+
+        best_params: Optional[Dict[str, Any]] = None
+        best_benefit = -1e18
+
+        for params in valid_params:
+            src = params.get("self_card_coord")
+            dst = params.get("self_empty_coord")
+            if not (isinstance(src, tuple) and len(src) == 2):
+                continue
+            if not (isinstance(dst, tuple) and len(dst) == 2):
+                continue
+            sx, sy = int(src[0]), int(src[1])
+            dx, dy = int(dst[0]), int(dst[1])
+
+            moving = b.get(sx, sy)
+            if moving is None:
+                continue
+
+            b.set(sx, sy, None)
+            b.set(dx, dy, moving)
+            try:
+                pot = self._board_line4_potential(b)
+                benefit = pot - base_pot
+                if benefit > best_benefit:
+                    best_benefit = benefit
+                    best_params = params
+            finally:
+                b.set(dx, dy, None)
+                b.set(sx, sy, moving)
+
+        if best_benefit <= -1e17:
+            return None, 0.0
+        return best_params, float(best_benefit)
+
+    def _best_rwd6_choice(self, state: GameState, valid_params: Sequence[Dict[str, Any]]) -> Tuple[Optional[Dict[str, Any]], float]:
+        best_params: Optional[Dict[str, Any]] = None
+        best_benefit = -1e18
+
+        for params in valid_params:
+            opp_idx = params.get("opponent_idx")
+            src = params.get("opponent_card_coord")
+            if not isinstance(opp_idx, int):
+                continue
+            if not isinstance(src, tuple) or len(src) != 2:
+                continue
+
+            opp = state.players[opp_idx]
+            ob = opp.board
+            sx, sy = int(src[0]), int(src[1])
+
+            removed = ob.get(sx, sy)
+            if removed is None:
+                continue
+
+            base_pot = self._board_line4_potential(ob)
+
+            ob.set(sx, sy, None)
+            try:
+                pot = self._board_line4_potential(ob)
+                benefit = base_pot - pot
+                if benefit > best_benefit:
+                    best_benefit = benefit
+                    best_params = params
+            finally:
+                ob.set(sx, sy, removed)
+
+        if best_benefit <= -1e17:
+            return None, 0.0
+        return best_params, float(best_benefit)
 
     def _placed_card_for_reward_preview(self, state: GameState, reward_id: str, params: Dict[str, Any]) -> Optional[PlacedCard]:
         if reward_id == "RWD9":
@@ -420,48 +747,89 @@ class CenterLine4Agent(Agent):
 
         return None
 
-    def _best_rwd10_benefit(self, state: GameState, valid_params: Sequence[Dict[str, Any]]) -> float:
+    # ---- utilities ----
+
+    def _build_center_slots(self) -> List[_LineSlot]:
+        out: List[_LineSlot] = []
+        for w in self._all_line4_windows:
+            if w.size != 4:
+                continue
+            coords = w.coords
+            prot = [c for c in coords if self._is_protected(c[0], c[1])]
+            if len(prot) != 3:
+                continue
+            outside = [c for c in coords if c not in prot]
+            if len(outside) != 1:
+                continue
+            out.append(_LineSlot(coords=coords, protected_coords=tuple(prot), outside_coord=outside[0]))
+        return out
+
+    def _is_protected(self, x: int, y: int) -> bool:
+        return self._pz.is_protected(x, y, self._width, self._height)
+
+    def _best_placement_score_for_card(self, state: GameState, card: Card, empties: Sequence[Coord]) -> float:
         best = -1e18
-        for params in valid_params:
-            placed = self._stolen_card_preview(state, params)
-            if placed is None:
-                continue
-            dst = params.get("self_empty_coord")
-            if not isinstance(dst, tuple) or len(dst) != 2:
-                continue
-            s = self._score_placement(state, placed, (int(dst[0]), int(dst[1])))
+        for cell in empties:
+            s = self._score_placement(state, card, cell)
             if s > best:
                 best = s
-        if best <= -1e17:
-            return 0.0
         return best
 
-    def _choose_best_rwd10_params(self, state: GameState, valid_params: Sequence[Dict[str, Any]]) -> Optional[Dict[str, Any]]:
-        best_params: Optional[Dict[str, Any]] = None
-        best_score: Optional[float] = None
+    def _edge_corner_bonus(self, x: int, y: int) -> float:
+        is_corner = (x in (0, self._width - 1)) and (y in (0, self._height - 1))
+        if is_corner:
+            return 3.0
+        is_edge = (x in (0, self._width - 1)) or (y in (0, self._height - 1))
+        if is_edge:
+            return 1.6
+        return 0.0
 
-        for params in valid_params:
-            placed = self._stolen_card_preview(state, params)
-            if placed is None:
-                continue
-            dst = params.get("self_empty_coord")
-            if not isinstance(dst, tuple) or len(dst) != 2:
-                continue
-            s = self._score_placement(state, placed, (int(dst[0]), int(dst[1])))
-            if best_score is None or s > best_score:
-                best_score = s
-                best_params = params
+    def _center_proximity_bonus(self, x: int, y: int) -> float:
+        dist = abs(x - self._center_x) + abs(y - self._center_y)
+        max_dist = (self._width - 1) + (self._height - 1)
+        return float(max_dist - dist)
 
-        return best_params
+    def _row_col_center_start_bonus(self, board, x: int, y: int) -> float:
+        if not board.is_empty(x, y):
+            return 0.0
+        row_bonus = float((self._width // 2) - abs(x - self._center_x))
+        col_bonus = float((self._height // 2) - abs(y - self._center_y))
+        return max(row_bonus, col_bonus)
 
-    def _stolen_card_preview(self, state: GameState, params: Dict[str, Any]) -> Optional[PlacedCard]:
-        opp_idx = params.get("opponent_idx")
-        src = params.get("opponent_card_coord")
-        if not isinstance(opp_idx, int):
-            return None
-        if not isinstance(src, tuple) or len(src) != 2:
-            return None
-        ox, oy = int(src[0]), int(src[1])
-        if opp_idx < 0 or opp_idx >= len(state.players):
-            return None
-        return state.players[opp_idx].board.get(ox, oy)
+
+class Line4HAgent(_BaseLine4Specialist):
+    @property
+    def name(self) -> str:
+        return "line4_h"
+
+    def _build_priority(self) -> Tuple[str, ...]:
+        return ("H", "I", "J")
+
+
+class Line4IAgent(_BaseLine4Specialist):
+    @property
+    def name(self) -> str:
+        return "line4_i"
+
+    def _build_priority(self) -> Tuple[str, ...]:
+        return ("I", "H", "J")
+
+
+class Line4JAgent(_BaseLine4Specialist):
+    @property
+    def name(self) -> str:
+        return "line4_j"
+
+    def _build_priority(self) -> Tuple[str, ...]:
+        return ("J", "I", "H")
+
+
+class CenterLine4Agent(Line4IAgent):
+    """
+    Алиас для существующего имени 'center_line4' (чтобы не ломать CLI/interactive_watch).
+    По поведению это Line4IAgent (I->H->J), но name остаётся прежним.
+    """
+
+    @property
+    def name(self) -> str:
+        return "center_line4"
