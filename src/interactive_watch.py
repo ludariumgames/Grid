@@ -3,12 +3,14 @@ from __future__ import annotations
 import sys
 from pathlib import Path
 
-# --- bootstrap: гарантируем, что папка src/ есть в sys.path ---
-# Это нужно, чтобы работали импорты вида: "from agents.base import ..."
-_THIS_DIR = Path(__file__).resolve().parent  # .../Grid/src
-if str(_THIS_DIR) not in sys.path:
-    sys.path.insert(0, str(_THIS_DIR))
-# -------------------------------------------------------------
+# --- bootstrap: allow running as a script from anywhere (fixes ModuleNotFoundError: agents) ---
+_THIS = Path(__file__).resolve()
+_SRC_DIR = _THIS.parent
+_ROOT_DIR = _SRC_DIR.parent
+if str(_SRC_DIR) not in sys.path:
+    sys.path.insert(0, str(_SRC_DIR))
+if str(_ROOT_DIR) not in sys.path:
+    sys.path.insert(0, str(_ROOT_DIR))
 
 import argparse
 import importlib
@@ -24,7 +26,6 @@ from game_setup import create_initial_game_state
 from models import Board, Card, GameState, Joker, PlacedCard
 from reward_engine import build_rewards_by_id
 
-
 Coord = Tuple[int, int]
 
 
@@ -36,49 +37,33 @@ def _color_letter(color: int) -> str:
 
 
 def _card_token(card: Card) -> str:
-    # только rank+color
     return f"{card.rank}{_color_letter(card.color)}"
 
 
-def _placed_token(pc: Optional[PlacedCard], mark: str) -> str:
-    # фиксированная ширина 3 символа на клетку
+def _placed_token(pc: Optional[PlacedCard], mark: Optional[str]) -> str:
+    # fixed width 3 chars
     # empty: " .."
     # card:  " 6A"
-    # just placed this turn: "+6A"
-    # pattern cell highlight: "*6A"
+    # marked: "+6A" or "*6A"
     if pc is None:
         return " .."
     if isinstance(pc, Joker):
-        t = "J?"
+        base = "J?"
     else:
-        t = _card_token(pc)
-    if mark == "+":
-        return f"+{t}"
-    if mark == "*":
-        return f"*{t}"
-    return f" {t}"
+        base = _card_token(pc)
+    if mark:
+        return f"{mark}{base}"
+    return f" {base}"
 
 
-def _render_board(
-    board: Board,
-    *,
-    plus_highlights: Optional[Sequence[Coord]] = None,
-    star_highlights: Optional[Sequence[Coord]] = None,
-) -> List[str]:
-    plus = set(plus_highlights or [])
-    star = set(star_highlights or [])
+def _render_board(board: Board, highlights: Optional[Sequence[Coord]] = None, mark: str = "+") -> List[str]:
+    hs = set(highlights or [])
     out: List[str] = []
     for y in range(board.height):
-        row: List[str] = []
+        row_tokens: List[str] = []
         for x in range(board.width):
-            if (x, y) in star:
-                mark = "*"
-            elif (x, y) in plus:
-                mark = "+"
-            else:
-                mark = " "
-            row.append(_placed_token(board.get(x, y), mark))
-        out.append(" ".join(row))
+            row_tokens.append(_placed_token(board.get(x, y), mark if (x, y) in hs else None))
+        out.append("  ".join(row_tokens))
     return out
 
 
@@ -110,29 +95,32 @@ def _resolve_config_path(config_arg: str) -> str:
         f" - {p2}\n"
         f" - {p3}\n"
         "Fix in PyCharm: Run -> Edit Configurations -> Working directory = project root (Grid)\n"
-        "Or pass: --config ../config/game_rules_config_v0_1.json"
+        "Or pass: --config config/game_rules_config_v0_1.json"
     )
 
 
 def _import_agent_class(agent_name: str) -> type:
     name = agent_name.strip().lower()
 
-    # Все эти агенты лежат в одном модуле src/agents/center_line4_agent.py
     if name in ("center_line4", "center_line4_agent", "centerline4"):
         module_name = "agents.center_line4_agent"
         preferred_class = "CenterLine4Agent"
-    elif name in ("line4_h", "h", "line4h", "line_h", "pattern_h"):
-        module_name = "agents.center_line4_agent"
+    elif name in ("line4_h", "line4_h_agent", "h"):
+        module_name = "agents.line4_h_agent"
         preferred_class = "Line4HAgent"
-    elif name in ("line4_i", "i", "line4i", "line_i", "pattern_i"):
-        module_name = "agents.center_line4_agent"
+    elif name in ("line4_i", "line4_i_agent", "i"):
+        module_name = "agents.line4_i_agent"
         preferred_class = "Line4IAgent"
-    elif name in ("line4_j", "j", "line4j", "line_j", "pattern_j"):
-        module_name = "agents.center_line4_agent"
+    elif name in ("line4_j", "line4_j_agent", "j"):
+        module_name = "agents.line4_j_agent"
         preferred_class = "Line4JAgent"
+    elif name in ("random", "random_agent"):
+        module_name = "agents.random_agent"
+        preferred_class = "RandomAgent"
     else:
         raise ValueError(
-            f"Unknown agent '{agent_name}'. Expected one of: center_line4, line4_h, line4_i, line4_j."
+            f"Unknown agent '{agent_name}'. Expected one of: "
+            "center_line4, line4_h, line4_i, line4_j, random."
         )
 
     mod = importlib.import_module(module_name)
@@ -199,7 +187,7 @@ def _instantiate_game_engine(cfg: Any, agents: List[Agent], rng: random.Random) 
     sig = inspect.signature(GameEngine.__init__)
     kwargs: Dict[str, Any] = {}
 
-    for pname, p in sig.parameters.items():
+    for pname, _p in sig.parameters.items():
         if pname == "self":
             continue
         low = pname.lower()
@@ -239,9 +227,10 @@ class PendingPattern:
     vp: int
     reward_id: Optional[str]
     cells: List[Coord]
-    board_before_lines: List[str] = field(default_factory=list)
     apply_reward: Optional[bool] = None
     reward_params: Optional[Dict[str, Any]] = None
+    board_before_lines: List[str] = field(default_factory=list)
+    before_snapshot: Dict[Coord, Optional[str]] = field(default_factory=dict)
 
 
 @dataclass
@@ -251,7 +240,7 @@ class TurnContext:
     agent_name: str
     start_deck: int
     start_discard: int
-    start_hand: str
+    start_hand: List[str]
     start_incoming: Optional[str]
     start_vps: List[int]
     draft: TurnDraft = field(default_factory=TurnDraft)
@@ -281,109 +270,90 @@ class WatchUI:
             self.pause()
 
 
+def _snapshot_board_tokens(board: Board) -> Dict[Coord, Optional[str]]:
+    snap: Dict[Coord, Optional[str]] = {}
+    for y in range(board.height):
+        for x in range(board.width):
+            v = board.get(x, y)
+            if v is None:
+                snap[(x, y)] = None
+            elif isinstance(v, Joker):
+                snap[(x, y)] = "J?"
+            else:
+                snap[(x, y)] = _card_token(v)
+    return snap
+
+
 class TurnLogger:
     def __init__(self, ui: WatchUI, agents_by_player: List[str]) -> None:
         self.ui = ui
         self.agents_by_player = agents_by_player
 
-        self.current_key: Optional[Tuple[int, int]] = None
+        self.current_key: Optional[Tuple[int, int]] = None  # (turn_number, player_idx)
         self.current_ctx: Optional[TurnContext] = None
 
+        # карта, которую логически "передали" игроку, чтобы показать в начале его хода
         self.incoming_by_player: Dict[int, str] = {}
+
+        # паттерн, который только что выбрали и сейчас будет награда/очистка
         self.pending_pattern: Optional[PendingPattern] = None
-        self.placed_this_turn: List[Coord] = []
-
-    def _pending_is_cleared(self, state: GameState) -> bool:
-        if self.pending_pattern is None:
-            return False
-        pp = self.pending_pattern
-        b = state.players[pp.player_idx].board
-        for (x, y) in pp.cells:
-            if b.get(x, y) is not None:
-                return False
-        return True
-
-    def _infer_reward_result(self, state: GameState, pp: PendingPattern) -> str:
-        if pp.apply_reward is False:
-            return "skipped_by_agent"
-        if pp.apply_reward is None:
-            return "unknown"
-        if pp.reward_id is None:
-            return "unknown"
-        if pp.reward_params is None:
-            return "unknown"
-        rid = pp.reward_id
-        params = pp.reward_params
-        try:
-            if rid == "RWD1":
-                src = params.get("self_card_coord")
-                if isinstance(src, tuple) and len(src) == 2:
-                    sx, sy = int(src[0]), int(src[1])
-                    b = state.players[pp.player_idx].board
-                    return "applied" if b.get(sx, sy) is None else "impossible"
-            if rid == "RWD7":
-                opp_idx = params.get("opponent_idx")
-                src = params.get("opponent_card_coord")
-                dst = params.get("opponent_empty_coord")
-                if isinstance(opp_idx, int) and isinstance(src, tuple) and isinstance(dst, tuple) and len(src) == 2 and len(dst) == 2:
-                    ob = state.players[opp_idx].board
-                    sx, sy = int(src[0]), int(src[1])
-                    dx, dy = int(dst[0]), int(dst[1])
-                    return "applied" if (ob.get(sx, sy) is None and ob.get(dx, dy) is not None) else "impossible"
-            if rid == "RWD10":
-                dst = params.get("self_empty_coord")
-                if isinstance(dst, tuple) and len(dst) == 2:
-                    dx, dy = int(dst[0]), int(dst[1])
-                    b = state.players[pp.player_idx].board
-                    return "applied" if b.get(dx, dy) is not None else "impossible"
-            if rid in ("RWD2", "RWD8", "RWD9", "RWD3"):
-                dst = params.get("self_empty_coord")
-                if isinstance(dst, tuple) and len(dst) == 2:
-                    dx, dy = int(dst[0]), int(dst[1])
-                    b = state.players[pp.player_idx].board
-                    return "applied" if b.get(dx, dy) is not None else "impossible"
-            if rid == "RWD6":
-                opp_idx = params.get("opponent_idx")
-                src = params.get("opponent_card_coord")
-                if isinstance(opp_idx, int) and isinstance(src, tuple) and len(src) == 2:
-                    sx, sy = int(src[0]), int(src[1])
-                    ob = state.players[opp_idx].board
-                    return "applied" if ob.get(sx, sy) is None else "impossible"
-            if rid in ("RWD4", "RWD5"):
-                return "requested"
-        except Exception:
-            return "unknown"
-        return "unknown"
 
     def _flush_pending_pattern_if_ready(self, state: GameState) -> None:
         if self.pending_pattern is None:
-            return
-        if not self._pending_is_cleared(state):
             return
 
         pp = self.pending_pattern
         pidx = pp.player_idx
         ps = state.players[pidx]
 
+        # ВАЖНО: движок может очистить паттерн не сразу.
+        # Печатаем блок только когда паттерн-клетки реально пустые.
+        for (x, y) in pp.cells:
+            if ps.board.get(x, y) is not None:
+                return
+
         lines: List[str] = []
         lines.append("")
         lines.append(f"PATTERN RESOLVED | Player {pidx} turn {pp.turn_number}")
         lines.append(f"pattern={pp.pattern_id} vp={pp.vp} reward={pp.reward_id} cells={pp.cells}")
+
         if pp.board_before_lines:
             lines.append("board before clear (pattern cells marked with '*'):")
             lines.extend(pp.board_before_lines)
+
         if pp.reward_id is not None:
             lines.append(f"reward decision: apply={pp.apply_reward}")
             if pp.reward_params is not None:
                 lines.append(f"reward params: {pp.reward_params}")
-            lines.append(f"reward result: {self._infer_reward_result(state, pp)}")
+
+            if pp.apply_reward is False:
+                lines.append("reward result: skipped_by_agent")
+            elif pp.apply_reward is True:
+                after_snap = _snapshot_board_tokens(ps.board)
+                pattern_cells = set(pp.cells)
+                changed_outside = False
+                for coord, before_val in pp.before_snapshot.items():
+                    if coord in pattern_cells:
+                        continue
+                    if after_snap.get(coord) != before_val:
+                        changed_outside = True
+                        break
+                lines.append("reward result: requested")
+                lines.append(f"reward effect on this board: {'changed' if changed_outside else 'no_visible_change'}")
+                lines.append("note: reward may still be impossible or may affect opponent board only.")
+            else:
+                # apply=None обычно означает, что движок не спрашивал агента (авто-применение)
+                lines.append("reward result: engine_auto_or_not_requested")
+
         lines.append("board after clear:")
-        lines.extend(_render_board(ps.board))
+        lines.extend(_render_board(ps.board, highlights=None, mark="+"))
 
         self.ui.print_block(lines, pause_after=True)
         self.pending_pattern = None
 
     def _flush_turn(self, state: GameState, ctx: TurnContext) -> None:
+        ps = state.players[ctx.player_idx]
+
         lines: List[str] = []
         lines.append("")
         lines.append(f"TURN {ctx.turn_number} END | Player {ctx.player_idx} ({ctx.agent_name})")
@@ -414,25 +384,26 @@ class TurnLogger:
             lines.append("placements: none")
 
         lines.append("board at end of turn:")
-        ps = state.players[ctx.player_idx]
-        lines.extend(_render_board(ps.board, plus_highlights=self.placed_this_turn))
+        hl_cells = [pl.cell for pl in ctx.placements]
+        lines.extend(_render_board(ps.board, highlights=hl_cells, mark="+"))
 
         self.ui.print_block(lines, pause_after=True)
 
     def ensure_turn(self, state: GameState) -> None:
+        # если был паттерн на прошлом шаге, к этому моменту движок уже очистил клетки
         self._flush_pending_pattern_if_ready(state)
 
         key = (state.turn_number, state.current_player_idx)
         if self.current_key == key:
             return
 
+        # новый ход: сначала выводим предыдущий ход (если был)
         if self.current_ctx is not None:
             self._flush_turn(state, self.current_ctx)
 
-        self.placed_this_turn = []
-
         pidx = state.current_player_idx
         agent_name = self.agents_by_player[pidx] if 0 <= pidx < len(self.agents_by_player) else "?"
+        start_hand_tokens = [_card_token(c) for c in state.current_player().hand]
         incoming = self.incoming_by_player.get(pidx)
 
         self.current_key = key
@@ -442,10 +413,18 @@ class TurnLogger:
             agent_name=agent_name,
             start_deck=len(state.deck),
             start_discard=len(state.discard),
-            start_hand=_hand_tokens(state.current_player().hand),
+            start_hand=start_hand_tokens,
             start_incoming=incoming,
             start_vps=[p.vp for p in state.players],
         )
+
+    def finish(self, final_state: GameState) -> None:
+        # в конце игры тоже может висеть pending pattern и незасфлашенный последний ход
+        self._flush_pending_pattern_if_ready(final_state)
+        if self.current_ctx is not None:
+            self._flush_turn(final_state, self.current_ctx)
+            self.current_ctx = None
+            self.current_key = None
 
     def on_draft_pick(self, state: GameState, revealed: Sequence[Card], pick_idx: int) -> None:
         self.ensure_turn(state)
@@ -473,6 +452,7 @@ class TurnLogger:
             if 0 <= other < 2:
                 d.discarded = _card_token(remaining[other])
 
+        # incoming отображаем в начале хода получателя
         if d.passed is not None:
             self.incoming_by_player[nxt] = d.passed
 
@@ -483,8 +463,8 @@ class TurnLogger:
 
         tok = _card_token(card)
         self.current_ctx.placements.append(TurnPlacement(card=tok, cell=cell))
-        self.placed_this_turn.append((int(cell[0]), int(cell[1])))
 
+        # если это была incoming-карта, убираем её из "incoming" следующего отображения
         pidx = state.current_player_idx
         inc = self.incoming_by_player.get(pidx)
         if inc == tok:
@@ -496,17 +476,21 @@ class TurnLogger:
         pidx = state.current_player_idx
         ps = state.players[pidx]
 
-        cells = [tuple(c) for c in chosen.cells]  # type: ignore[attr-defined]
-        before_lines = _render_board(ps.board, star_highlights=cells)
+        cells_raw = list(getattr(chosen, "cells"))
+        cells: List[Coord] = [(int(x), int(y)) for (x, y) in cells_raw]
+
+        before_lines = _render_board(ps.board, highlights=cells, mark="*")
+        before_snapshot = _snapshot_board_tokens(ps.board)
 
         self.pending_pattern = PendingPattern(
             player_idx=pidx,
             turn_number=state.turn_number,
-            pattern_id=str(chosen.pattern_id),  # type: ignore[attr-defined]
-            vp=int(chosen.vp),  # type: ignore[attr-defined]
+            pattern_id=str(getattr(chosen, "pattern_id")),
+            vp=int(getattr(chosen, "vp")),
             reward_id=getattr(chosen, "reward_id", None),
-            cells=[(int(x), int(y)) for (x, y) in cells],
+            cells=cells,
             board_before_lines=before_lines,
+            before_snapshot=before_snapshot,
         )
 
     def on_reward_apply(self, apply: bool) -> None:
@@ -598,6 +582,7 @@ def main() -> int:
     deck_rng = random.Random(base_rng.getrandbits(64))
     engine_rng = random.Random(base_rng.getrandbits(64))
 
+    # важное исправление: create_initial_game_state ожидает num_players и rng
     state = create_initial_game_state(cfg, num_players=args.players, rng=deck_rng, game_id=1)
 
     ui = WatchUI(pause_each_turn=(not args.no_pause))
@@ -615,11 +600,13 @@ def main() -> int:
     print("Interactive watch started.")
     print("Controls: Enter to continue, q + Enter to quit, Ctrl+C to quit.")
 
+    # первая пауза перед началом
     ui.pause()
 
     final_state, stats, _events = engine.play_game(state)
 
-    logger.ensure_turn(final_state)
+    # добить последний ход и возможный pending pattern
+    logger.finish(final_state)
 
     print("")
     print("FINAL")
