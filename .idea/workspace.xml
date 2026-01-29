@@ -4,15 +4,7 @@
     <option name="autoReloadType" value="SELECTIVE" />
   </component>
   <component name="ChangeListManager">
-    <list default="true" id="e7e595ea-b726-4ce8-b567-3f5f7a0c7f38" name="Changes" comment="midway">
-      <change afterPath="$PROJECT_DIR$/src/agents/line4_h_agent.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/src/agents/line4_i_agent.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/src/agents/line4_j_agent.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/src/tournament.py" afterDir="false" />
-      <change afterPath="$PROJECT_DIR$/tests/test_line4_h_agent_pass.py" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/.idea/workspace.xml" beforeDir="false" afterPath="$PROJECT_DIR$/.idea/workspace.xml" afterDir="false" />
-      <change beforePath="$PROJECT_DIR$/src/interactive_watch.py" beforeDir="false" afterPath="$PROJECT_DIR$/src/interactive_watch.py" afterDir="false" />
-    </list>
+    <list default="true" id="e7e595ea-b726-4ce8-b567-3f5f7a0c7f38" name="Changes" comment="midway" />
     <option name="SHOW_DIALOG" value="false" />
     <option name="HIGHLIGHT_CONFLICTS" value="true" />
     <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
@@ -240,7 +232,15 @@
       <option name="project" value="LOCAL" />
       <updated>1769681776271</updated>
     </task>
-    <option name="localTasksCounter" value="9" />
+    <task id="LOCAL-00009" summary="midway">
+      <option name="closed" value="true" />
+      <created>1769690567375</created>
+      <option name="number" value="00009" />
+      <option name="presentableId" value="LOCAL-00009" />
+      <option name="project" value="LOCAL" />
+      <updated>1769690567375</updated>
+    </task>
+    <option name="localTasksCounter" value="10" />
     <servers />
   </component>
   <component name="VcsManagerConfiguration">
