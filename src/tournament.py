@@ -1,98 +1,187 @@
+from __future__ import annotations
+
 import sys
 from pathlib import Path
 
-# Ensure local imports work when running: python tournament.py (from src/)
-_THIS_DIR = Path(__file__).resolve().parent
-if str(_THIS_DIR) not in sys.path:
-    sys.path.insert(0, str(_THIS_DIR))
+# bootstrap sys.path so "from agents..." works when running as a script
+_THIS = Path(__file__).resolve()
+_SRC_DIR = _THIS.parent
+_ROOT_DIR = _SRC_DIR.parent
+if str(_SRC_DIR) not in sys.path:
+    sys.path.insert(0, str(_SRC_DIR))
+if str(_ROOT_DIR) not in sys.path:
+    sys.path.insert(0, str(_ROOT_DIR))
 
 import argparse
 import importlib
 import inspect
 import random
-import time
-import zlib
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional, Sequence, Tuple
 
-from config_loader import load_config
-from game_engine import play_game
+from agents.base import Agent
+from config_loader import load_rules_config
+from game_engine import GameEngine
 from game_setup import create_initial_game_state
+from reward_engine import build_rewards_by_id
 
-
-# --------------------------------- agents ---------------------------------
-
-def _import_agent_class(agent_module_name: str):
-    mod = importlib.import_module(f"agents.{agent_module_name}_agent")
-    for name, obj in inspect.getmembers(mod):
-        if inspect.isclass(obj) and name.endswith("Agent"):
-            return obj
-    raise RuntimeError(f"No *Agent class found in agents/{agent_module_name}_agent.py")
-
-
-# --------------------------------- config ---------------------------------
 
 def _resolve_config_path(config_arg: str) -> str:
     p = Path(config_arg)
     if p.exists():
         return str(p)
 
-    # If user runs from src/, allow passing config/... relative to repo root.
-    alt = (_THIS_DIR.parent / config_arg).resolve()
-    if alt.exists():
-        return str(alt)
+    here = Path(__file__).resolve()
+    project_root = here.parent.parent
+    p2 = project_root / config_arg
+    if p2.exists():
+        return str(p2)
+
+    p3 = (here.parent / config_arg).resolve()
+    if p3.exists():
+        return str(p3)
 
     raise FileNotFoundError(
         "Config file not found.\n"
-        f"Tried: {p.resolve()}\n"
-        f"Also tried: {alt}\n"
-        "Tip: run from src/ or pass the path relative to project root.\n"
-        "Example: --config config/game_rules_config_v0_1.json"
+        f"Tried:\n"
+        f" - {p}\n"
+        f" - {p2}\n"
+        f" - {p3}\n"
+        "Fix in PyCharm: Working directory = project root (Grid)\n"
+        "Or pass: --config config/game_rules_config_v0_1.json"
     )
 
 
-# --------------------------------- utils ----------------------------------
+def _import_agent_class(agent_name: str) -> type:
+    name = agent_name.strip().lower()
 
-def _stable_u32(s: str) -> int:
-    """Deterministic 32-bit hash (unlike Python's hash(), which is salted per process)."""
-    return int(zlib.crc32(s.encode("utf-8")) & 0xFFFFFFFF)
+    if name in ("center_line4", "center_line4_agent", "centerline4"):
+        module_name = "agents.center_line4_agent"
+        preferred_class = "CenterLine4Agent"
+    elif name in ("line4_h", "line4_h_agent", "h"):
+        module_name = "agents.line4_h_agent"
+        preferred_class = "Line4HAgent"
+    elif name in ("line4_i", "line4_i_agent", "i"):
+        module_name = "agents.line4_i_agent"
+        preferred_class = "Line4IAgent"
+    elif name in ("line4_j", "line4_j_agent", "j"):
+        module_name = "agents.line4_j_agent"
+        preferred_class = "Line4JAgent"
+    elif name in ("random", "random_agent"):
+        module_name = "agents.random_agent"
+        preferred_class = "RandomAgent"
+    else:
+        raise ValueError(
+            f"Unknown agent '{agent_name}'. Expected one of: "
+            "center_line4, line4_h, line4_i, line4_j, random."
+        )
+
+    mod = importlib.import_module(module_name)
+
+    if hasattr(mod, preferred_class):
+        cls = getattr(mod, preferred_class)
+        if isinstance(cls, type):
+            return cls
+
+    candidates: List[type] = []
+    for obj in mod.__dict__.values():
+        if isinstance(obj, type) and obj is not Agent and issubclass(obj, Agent):
+            candidates.append(obj)
+
+    if not candidates:
+        raise RuntimeError(f"Module '{module_name}' imported, but no Agent subclasses found.")
+
+    return candidates[0]
 
 
-def _pair_id_unordered(a: str, b: str) -> int:
-    lo, hi = (a, b) if a <= b else (b, a)
-    return _stable_u32(f"{lo}|{hi}")
+def _instantiate_agent(
+    agent_cls: type,
+    *,
+    rng: random.Random,
+    rewards_by_id: Dict[str, Any],
+    cfg: Any,
+    player_idx: int,
+) -> Agent:
+    sig = inspect.signature(agent_cls.__init__)
+    kwargs: Dict[str, Any] = {}
+
+    for pname, p in sig.parameters.items():
+        if pname == "self":
+            continue
+
+        low = pname.lower()
+
+        if low in ("rng", "random", "rand", "random_state"):
+            kwargs[pname] = rng
+            continue
+
+        if low in ("rewards_by_id", "rewards", "reward_by_id", "reward_map", "rewards_map"):
+            kwargs[pname] = rewards_by_id
+            continue
+
+        if low in ("cfg", "config", "rules", "rules_config", "game_config"):
+            kwargs[pname] = cfg
+            continue
+
+        if low in ("player_idx", "player", "idx"):
+            kwargs[pname] = player_idx
+            continue
+
+        if p.default is inspect._empty:
+            raise TypeError(
+                f"Can't instantiate {agent_cls.__name__}: unknown required __init__ param '{pname}'. "
+                "Add mapping in tournament.py."
+            )
+
+    return agent_cls(**kwargs)  # type: ignore[misc]
 
 
-def _fmt_hhmmss(seconds: float) -> str:
-    s = max(0, int(seconds + 0.5))
-    h = s // 3600
-    m = (s % 3600) // 60
-    sec = s % 60
-    return f"{h:02d}:{m:02d}:{sec:02d}"
+def _instantiate_game_engine(cfg: Any, agents: List[Agent], rng: random.Random) -> GameEngine:
+    sig = inspect.signature(GameEngine.__init__)
+    kwargs: Dict[str, Any] = {}
 
+    for pname, _p in sig.parameters.items():
+        if pname == "self":
+            continue
+        low = pname.lower()
+        if low in ("cfg", "config", "rules", "rules_config", "game_config"):
+            kwargs[pname] = cfg
+        elif low in ("agents", "players_agents", "agent_list"):
+            kwargs[pname] = agents
+        elif low in ("rng", "random", "rand", "random_state"):
+            kwargs[pname] = rng
 
-# --------------------------------- summary --------------------------------
+    try:
+        return GameEngine(**kwargs)  # type: ignore[misc]
+    except TypeError:
+        return GameEngine(cfg, agents, rng)  # type: ignore[call-arg]
+
 
 @dataclass
-class MatchupSummary:
-    a0: str
-    a1: str
+class MatchupStats:
     games: int = 0
     wins_p0: int = 0
     wins_p1: int = 0
     ties: int = 0
-    sum_vp_p0: int = 0
-    sum_vp_p1: int = 0
+    sum_vp0: int = 0
+    sum_vp1: int = 0
     pattern_counts: Dict[str, int] = field(default_factory=dict)
     rewards_applied: Dict[str, int] = field(default_factory=dict)
     rewards_refused: Dict[str, int] = field(default_factory=dict)
     rewards_impossible: Dict[str, int] = field(default_factory=dict)
     fallback_events: int = 0
 
+    def add_dict(self, dst: Dict[str, int], src: Any) -> None:
+        if not src:
+            return
+        for k, v in dict(src).items():
+            dst[str(k)] = dst.get(str(k), 0) + int(v)
+
     def add_game(self, vp0: int, vp1: int, stats: Any) -> None:
         self.games += 1
-        self.sum_vp_p0 += int(vp0)
-        self.sum_vp_p1 += int(vp1)
+        self.sum_vp0 += int(vp0)
+        self.sum_vp1 += int(vp1)
+
         if vp0 > vp1:
             self.wins_p0 += 1
         elif vp1 > vp0:
@@ -100,84 +189,17 @@ class MatchupSummary:
         else:
             self.ties += 1
 
-        # Best-effort aggregation: tolerate missing stats fields.
-        if stats is None:
-            return
-
-        if hasattr(stats, "pattern_triggers"):
-            for k, v in dict(stats.pattern_triggers).items():
-                self.pattern_counts[k] = self.pattern_counts.get(k, 0) + int(v)
-
-        if hasattr(stats, "reward_applied"):
-            for k, v in dict(stats.reward_applied).items():
-                self.rewards_applied[k] = self.rewards_applied.get(k, 0) + int(v)
-
-        if hasattr(stats, "reward_refused"):
-            for k, v in dict(stats.reward_refused).items():
-                self.rewards_refused[k] = self.rewards_refused.get(k, 0) + int(v)
-
-        if hasattr(stats, "reward_impossible"):
-            for k, v in dict(stats.reward_impossible).items():
-                self.rewards_impossible[k] = self.rewards_impossible.get(k, 0) + int(v)
-
-        if hasattr(stats, "fallback_events"):
+        self.add_dict(self.pattern_counts, getattr(stats, "pattern_triggers", {}))
+        self.add_dict(self.rewards_applied, getattr(stats, "reward_applied", {}))
+        self.add_dict(self.rewards_refused, getattr(stats, "reward_refused", {}))
+        self.add_dict(self.rewards_impossible, getattr(stats, "reward_impossible", {}))
+        fb = getattr(stats, "fallback_events", None)
+        if fb is not None:
             try:
-                self.fallback_events += int(stats.fallback_events)
-            except Exception:
-                pass
+                self.fallback_events += len(fb)
+            except TypeError:
+                self.fallback_events += int(fb)
 
-
-@dataclass
-class AgentTotals:
-    games: int = 0
-    wins: int = 0
-    losses: int = 0
-    ties: int = 0
-    sum_vp: int = 0
-    sum_vp_opp: int = 0
-    games_as_p0: int = 0
-    games_as_p1: int = 0
-
-    def add(self, vp: int, vp_opp: int, is_p0: bool) -> None:
-        self.games += 1
-        self.sum_vp += int(vp)
-        self.sum_vp_opp += int(vp_opp)
-        if is_p0:
-            self.games_as_p0 += 1
-        else:
-            self.games_as_p1 += 1
-
-        if vp > vp_opp:
-            self.wins += 1
-        elif vp < vp_opp:
-            self.losses += 1
-        else:
-            self.ties += 1
-
-
-# --------------------------------- game -----------------------------------
-
-def _run_single_game(
-    cfg: Any,
-    rewards_by_id: Dict[str, Any],
-    agent0_cls: Any,
-    agent1_cls: Any,
-    deck_rng: random.Random,
-    game_id: int,
-) -> Tuple[int, int, Any]:
-    state = create_initial_game_state(cfg, deck_rng)
-
-    agent0 = agent0_cls(player_idx=0, cfg=cfg, rewards_by_id=rewards_by_id)
-    agent1 = agent1_cls(player_idx=1, cfg=cfg, rewards_by_id=rewards_by_id)
-
-    final_state, stats = play_game(cfg, state, agents=[agent0, agent1], game_id=game_id)
-
-    vp0 = final_state.vp[0]
-    vp1 = final_state.vp[1]
-    return int(vp0), int(vp1), stats
-
-
-# --------------------------------- cli ------------------------------------
 
 def _parse_args() -> argparse.Namespace:
     p = argparse.ArgumentParser(prog="tournament")
@@ -185,163 +207,83 @@ def _parse_args() -> argparse.Namespace:
     p.add_argument("--games", type=int, default=200)
     p.add_argument("--seed", type=int, default=123)
     p.add_argument("--agents", nargs="+", required=True)
-    p.add_argument("--mirror", action="store_true", help="Play both seatings for each pair.")
-    p.add_argument(
-        "--progress-every",
-        type=int,
-        default=0,
-        help="Print progress every N games per matchup (0 = auto).",
-    )
+    p.add_argument("--mirror", action="store_true", help="Also run mirrored seating (A vs B and B vs A)")
     return p.parse_args()
+
+
+def _run_single_game(cfg: Any, rewards_by_id: Dict[str, Any], a0: str, a1: str, base_seed: int, game_id: int) -> Tuple[int, int, Any]:
+    base_rng = random.Random((base_seed << 20) ^ game_id)
+
+    deck_rng = random.Random(base_rng.getrandbits(64))
+    engine_rng = random.Random(base_rng.getrandbits(64))
+
+    state = create_initial_game_state(cfg, num_players=2, rng=deck_rng, game_id=game_id)
+
+    agents: List[Agent] = []
+    for idx, aname in enumerate([a0, a1]):
+        cls = _import_agent_class(aname)
+        arng = random.Random(base_rng.getrandbits(64))
+        inner = _instantiate_agent(cls, rng=arng, rewards_by_id=rewards_by_id, cfg=cfg, player_idx=idx)
+        agents.append(inner)
+
+    engine = _instantiate_game_engine(cfg, agents, engine_rng)
+    final_state, stats, _events = engine.play_game(state)
+
+    vp0 = int(final_state.players[0].vp)
+    vp1 = int(final_state.players[1].vp)
+    return vp0, vp1, stats
 
 
 def main() -> int:
     args = _parse_args()
-
     cfg_path = _resolve_config_path(args.config)
-    cfg = load_config(cfg_path)
+    cfg = load_rules_config(cfg_path)
+    rewards_by_id = build_rewards_by_id(cfg)
 
-    rewards_by_id: Dict[str, Any] = {r.reward_id: r for r in cfg.rewards}
+    agent_list = [a.strip() for a in args.agents if a.strip()]
+    if len(agent_list) < 2:
+        raise ValueError("--agents must include at least 2 agent names")
 
-    agent_list = list(args.agents)
-    agents = {name: _import_agent_class(name) for name in agent_list}
-
-    # Unordered pairs in a stable order.
     pairs: List[Tuple[str, str]] = []
     for i in range(len(agent_list)):
         for j in range(i + 1, len(agent_list)):
             pairs.append((agent_list[i], agent_list[j]))
-
-    seatings: List[Tuple[str, str, str, int]] = []
-    # Each element is: (pair_key, p0_agent_name, p1_agent_name, seating_idx)
-    for a, b in pairs:
-        pair_key = "|".join([a, b] if a <= b else [b, a])
-        seatings.append((pair_key, a, b, 0))
-        if args.mirror:
-            seatings.append((pair_key, b, a, 1))
-
-    total_games = len(seatings) * args.games
-    progress_every = args.progress_every if args.progress_every > 0 else max(1, args.games // 100)
+    if args.mirror:
+        mirrored: List[Tuple[str, str]] = []
+        for (a, b) in pairs:
+            mirrored.append((a, b))
+            mirrored.append((b, a))
+        pairs = mirrored
 
     print("Tournament started.")
     print(f"agents={agent_list}")
     print(f"pairs={pairs}")
-    print(f"games_per_pair={args.games} seed={args.seed} mirror={args.mirror} progress_every={progress_every}")
-    print("")
+    print(f"games_per_pair={args.games} seed={args.seed}")
 
-    results: List[MatchupSummary] = []
-    totals: Dict[str, AgentTotals] = {name: AgentTotals() for name in agent_list}
+    for (a0, a1) in pairs:
+        ms = MatchupStats()
+        for g in range(args.games):
+            vp0, vp1, st = _run_single_game(cfg, rewards_by_id, a0, a1, args.seed, game_id=(hash((a0, a1)) & 0xFFFF) * 100000 + g)
+            ms.add_game(vp0, vp1, st)
 
-    overall_done = 0
-    overall_t0 = time.monotonic()
+        avg0 = ms.sum_vp0 / ms.games if ms.games else 0.0
+        avg1 = ms.sum_vp1 / ms.games if ms.games else 0.0
+        wr0 = ms.wins_p0 / ms.games if ms.games else 0.0
+        wr1 = ms.wins_p1 / ms.games if ms.games else 0.0
+        tie = ms.ties / ms.games if ms.games else 0.0
 
-    def print_progress(
-        matchup_idx: int,
-        matchup_total: int,
-        p0: str,
-        p1: str,
-        local_done: int,
-        local_total: int,
-    ) -> None:
-        nonlocal overall_done
-        now = time.monotonic()
-        overall_elapsed = now - overall_t0
-        overall_spg = overall_elapsed / overall_done if overall_done > 0 else 0.0
-        overall_eta = overall_spg * (total_games - overall_done) if overall_spg > 0 else 0.0
-
-        pct_local = (100.0 * local_done / local_total) if local_total > 0 else 0.0
-        pct_all = (100.0 * overall_done / total_games) if total_games > 0 else 0.0
-
-        msg = (
-            f"\rmatchup {matchup_idx}/{matchup_total} | {p0} vs {p1}"
-            f" | {local_done}/{local_total} ({pct_local:5.1f}%)"
-            f" | overall {overall_done}/{total_games} ({pct_all:5.1f}%)"
-            f" | elapsed { _fmt_hhmmss(overall_elapsed) }"
-            f" | eta { _fmt_hhmmss(overall_eta) }"
-        )
-        print(msg, end="", flush=True)
-
-    try:
-        for matchup_idx, (pair_key, p0, p1, seating_idx) in enumerate(seatings, start=1):
-            ms = MatchupSummary(a0=p0, a1=p1)
-            matchup_t0 = time.monotonic()
-
-            # Use an unordered pair id so that mirrored seatings use identical deck order for the same game index.
-            pair_id = _pair_id_unordered(*pair_key.split("|", 1))
-
-            for g in range(args.games):
-                # deck_seed is independent of tournament ordering and identical for mirrored seatings.
-                deck_seed = (args.seed & 0xFFFFFFFFFFFFFFFF) ^ (pair_id << 32) ^ int(g)
-                deck_rng = random.Random(deck_seed)
-
-                # game_id stays unique per game and per seating (useful for logs).
-                game_id = (pair_id * 10_000_000) + (seating_idx * 1_000_000) + int(g)
-
-                vp0, vp1, st = _run_single_game(cfg, rewards_by_id, agents[p0], agents[p1], deck_rng, game_id)
-                ms.add_game(vp0, vp1, st)
-
-                totals[p0].add(vp0, vp1, is_p0=True)
-                totals[p1].add(vp1, vp0, is_p0=False)
-
-                overall_done += 1
-                if (g + 1) % progress_every == 0 or (g + 1) == args.games:
-                    print_progress(matchup_idx, len(seatings), p0, p1, g + 1, args.games)
-
-            ms_elapsed = time.monotonic() - matchup_t0
-            results.append(ms)
-
-            # Clear the progress line before printing summary.
-            print("\n")
-
-            avg0 = ms.sum_vp_p0 / ms.games if ms.games else 0.0
-            avg1 = ms.sum_vp_p1 / ms.games if ms.games else 0.0
-            wr0 = ms.wins_p0 / ms.games if ms.games else 0.0
-            wr1 = ms.wins_p1 / ms.games if ms.games else 0.0
-            tie = ms.ties / ms.games if ms.games else 0.0
-
-            print(f"MATCHUP: {p0} (P0) vs {p1} (P1)")
-            print(f"games={ms.games} winrate_p0={wr0:.3f} winrate_p1={wr1:.3f} ties={tie:.3f}")
-            print(f"avg_vp_p0={avg0:.2f} avg_vp_p1={avg1:.2f} avg_diff_p0_minus_p1={(avg0 - avg1):.2f}")
-            print(f"patterns_total={dict(sorted(ms.pattern_counts.items()))}")
-            print(f"rewards_applied_total={dict(sorted(ms.rewards_applied.items()))}")
-            print(f"rewards_refused_total={dict(sorted(ms.rewards_refused.items()))}")
-            print(f"rewards_impossible_total={dict(sorted(ms.rewards_impossible.items()))}")
-            print(f"fallback_events_total={ms.fallback_events}")
-            print(f"elapsed_matchup={_fmt_hhmmss(ms_elapsed)}")
-            print("")
-
-    except KeyboardInterrupt:
-        print("\n\nTournament interrupted by user (Ctrl+C).")
-        print(f"overall_done={overall_done}/{total_games} elapsed={_fmt_hhmmss(time.monotonic() - overall_t0)}")
         print("")
+        print(f"MATCHUP: {a0} (P0) vs {a1} (P1)")
+        print(f"games={ms.games} winrate_p0={wr0:.3f} winrate_p1={wr1:.3f} ties={tie:.3f}")
+        print(f"avg_vp_p0={avg0:.2f} avg_vp_p1={avg1:.2f} avg_diff_p0_minus_p1={(avg0 - avg1):.2f}")
+        print(f"patterns_total={dict(sorted(ms.pattern_counts.items()))}")
+        print(f"rewards_applied_total={dict(sorted(ms.rewards_applied.items()))}")
+        print(f"rewards_refused_total={dict(sorted(ms.rewards_refused.items()))}")
+        print(f"rewards_impossible_total={dict(sorted(ms.rewards_impossible.items()))}")
+        print(f"fallback_events_total={ms.fallback_events}")
 
-        # Print whatever we have so far.
-        if results:
-            print("Completed matchups so far:")
-            for ms in results:
-                avg0 = ms.sum_vp_p0 / ms.games if ms.games else 0.0
-                avg1 = ms.sum_vp_p1 / ms.games if ms.games else 0.0
-                print(f" - {ms.a0} vs {ms.a1}: games={ms.games} avg_vp_p0={avg0:.2f} avg_vp_p1={avg1:.2f}")
-        return 130
-
-    # Final aggregated per-agent view (useful as a quick sanity check).
-    total_elapsed = time.monotonic() - overall_t0
-    print("Done.")
-    print(f"elapsed_total={_fmt_hhmmss(total_elapsed)}")
     print("")
-
-    print("AGENT TOTALS (across all matchups and seatings):")
-    for name in agent_list:
-        t = totals[name]
-        wr = (t.wins / t.games) if t.games else 0.0
-        avg_vp = (t.sum_vp / t.games) if t.games else 0.0
-        avg_diff = ((t.sum_vp - t.sum_vp_opp) / t.games) if t.games else 0.0
-        print(
-            f" - {name}: games={t.games} winrate={wr:.3f} ties={t.ties}"
-            f" avg_vp={avg_vp:.2f} avg_diff={avg_diff:.2f}"
-            f" as_p0={t.games_as_p0} as_p1={t.games_as_p1}"
-        )
-
+    print("Done.")
     return 0
 
 
